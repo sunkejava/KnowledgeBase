@@ -15,12 +15,12 @@ public sealed class KnowledgeBaseService(KnowledgeDbContext dbContext) : IKnowle
 {
     /// <summary>
     /// 获取全部知识库，主要供内部管理和兼容场景使用。
+    /// SQLite 不支持直接按 DateTimeOffset 排序，因此先投影再使用统一安全排序扩展。
     /// </summary>
-    public async Task<IReadOnlyList<KnowledgeBaseDto>> GetListAsync(CancellationToken cancellationToken)
-        => await dbContext.KnowledgeBases.AsNoTracking()
-            .OrderByDescending(x => x.UpdatedAt)
+    public Task<IReadOnlyList<KnowledgeBaseDto>> GetListAsync(CancellationToken cancellationToken)
+        => dbContext.KnowledgeBases.AsNoTracking()
             .Select(x => new KnowledgeBaseDto(x.Id, x.Name, x.Description, x.CreatedAt, x.UpdatedAt))
-            .ToListAsync(cancellationToken);
+            .ToSqliteSafeDateTimeOffsetListAsync(x => x.UpdatedAt, descending: true, cancellationToken);
 
     /// <summary>
     /// 根据当前用户成员关系分页查询可访问知识库；超级管理员可以访问全部知识库。
@@ -46,9 +46,13 @@ public sealed class KnowledgeBaseService(KnowledgeDbContext dbContext) : IKnowle
         }
 
         return source
-            .OrderByDescending(x => x.UpdatedAt)
             .Select(x => new KnowledgeBaseDto(x.Id, x.Name, x.Description, x.CreatedAt, x.UpdatedAt))
-            .ToPageResultAsync(query.NormalizedPage, query.NormalizedPageSize, cancellationToken);
+            .ToSqliteSafeDateTimeOffsetPageAsync(
+                x => x.UpdatedAt,
+                descending: true,
+                query.NormalizedPage,
+                query.NormalizedPageSize,
+                cancellationToken);
     }
 
     /// <summary>获取单个知识库。</summary>
