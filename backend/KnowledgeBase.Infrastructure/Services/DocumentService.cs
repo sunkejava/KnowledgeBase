@@ -10,10 +10,15 @@ namespace KnowledgeBase.Infrastructure.Services;
 public sealed class DocumentService(KnowledgeDbContext dbContext) : IDocumentService
 {
     public async Task<IReadOnlyList<DocumentListItemDto>> GetListAsync(Guid knowledgeBaseId, CancellationToken cancellationToken)
-        => await dbContext.Documents.AsNoTracking().Where(x => x.KnowledgeBaseId == knowledgeBaseId)
+    {
+        var rows = await dbContext.Documents.AsNoTracking()
+            .Where(x => x.KnowledgeBaseId == knowledgeBaseId)
             .OrderBy(x => x.CreatedAt)
-            .Select(x => new DocumentListItemDto(x.Id, x.ParentId, x.Title, x.Status.ToString(), x.UpdatedAt))
+            .Select(x => new { x.Id, x.ParentId, x.Title, x.Status, x.UpdatedAt })
             .ToListAsync(cancellationToken);
+
+        return rows.Select(x => new DocumentListItemDto(x.Id, x.ParentId, x.Title, x.Status.ToString(), x.UpdatedAt)).ToList();
+    }
 
     public async Task<DocumentDetailDto?> GetAsync(Guid id, CancellationToken cancellationToken)
     {
