@@ -1,6 +1,7 @@
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Contracts.Common;
 using KnowledgeBase.Contracts.Knowledge;
+using KnowledgeBase.Infrastructure.Common;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,7 +16,7 @@ public sealed class SqliteKnowledgeSearchService(KnowledgeDbContext db) : IKnowl
     public string ProviderName => "sqlite";
 
     /// <summary>
-    /// 在数据库层执行权限过滤、知识库过滤、分页和排序。
+    /// 在数据库层执行权限过滤和知识库过滤；DateTimeOffset 排序统一在投影后通过 SQLite 安全分页扩展完成。
     /// </summary>
     public async Task<PageResult<SearchResultDto>> SearchAsync(
         string keyword,
@@ -33,40 +34,39 @@ public sealed class SqliteKnowledgeSearchService(KnowledgeDbContext db) : IKnowl
             from document in db.Documents.AsNoTracking()
             join content in db.DocumentContents.AsNoTracking() on document.Id equals content.DocumentId
             where document.Title.Contains(keyword) || content.Markdown.Contains(keyword)
-            select new { document, content };
+            select new
+            {
+                document.Id,
+                document.KnowledgeBaseId,
+                document.Title,
+                content.Markdown,
+                document.UpdatedAt
+            };
 
         if (knowledgeBaseId.HasValue)
-            source = source.Where(x => x.document.KnowledgeBaseId == knowledgeBaseId.Value);
+            source = source.Where(x => x.KnowledgeBaseId == knowledgeBaseId.Value);
 
         if (!isSuperAdmin)
         {
             source = source.Where(x => db.KnowledgeBaseMembers.Any(member =>
-                member.KnowledgeBaseId == x.document.KnowledgeBaseId && member.UserId == userId));
+                member.KnowledgeBaseId == x.KnowledgeBaseId && member.UserId == userId));
         }
 
-        var total = await source.LongCountAsync(ct);
-        var rows = await source
-            .OrderByDescending(x => x.document.UpdatedAt)
-            .Skip((query.NormalizedPage - 1) * query.NormalizedPageSize)
-            .Take(query.NormalizedPageSize)
-            .Select(x => new
-            {
-                x.document.Id,
-                x.document.KnowledgeBaseId,
-                x.document.Title,
-                x.content.Markdown,
-                x.document.UpdatedAt
-            })
-            .ToListAsync(ct);
+        var page = await source.ToSqliteSafeDateTimeOffsetPageAsync(
+            x => x.UpdatedAt,
+            descending: true,
+            query.NormalizedPage,
+            query.NormalizedPageSize,
+            ct);
 
-        var items = rows.Select(x => new SearchResultDto(
+        var items = page.Items.Select(x => new SearchResultDto(
             x.Id,
             x.KnowledgeBaseId,
             x.Title,
             BuildSnippet(x.Markdown, keyword),
             x.UpdatedAt)).ToList();
 
-        return new PageResult<SearchResultDto>(items, total, query.NormalizedPage, query.NormalizedPageSize);
+        return new PageResult<SearchResultDto>(items, page.Total, page.Page, page.PageSize);
     }
 
     /// <summary>SQLite 直接查询业务表，不维护外部索引，因此单文档更新无需额外操作。</summary>
