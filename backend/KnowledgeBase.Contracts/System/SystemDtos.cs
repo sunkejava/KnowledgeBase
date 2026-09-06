@@ -1,6 +1,6 @@
 namespace KnowledgeBase.Contracts.System;
 
-public sealed record UserDto(Guid Id,string UserName,string DisplayName,bool Enabled,IReadOnlyList<string> Roles,DateTimeOffset CreatedAt);
+public sealed record UserDto(Guid Id,string UserName,string DisplayName,bool Enabled,IReadOnlyList<Guid> RoleIds,IReadOnlyList<string> Roles,DateTimeOffset CreatedAt);
 public sealed record SaveUserRequest(string UserName,string DisplayName,string? Password,bool Enabled,IReadOnlyList<Guid> RoleIds);
 public sealed record ChangePasswordRequest(string OldPassword,string NewPassword);
 public sealed record RoleDto(Guid Id,string Code,string Name,bool Enabled,IReadOnlyList<Guid> MenuIds);
