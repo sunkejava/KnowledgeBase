@@ -20,6 +20,9 @@ builder.Services.AddHttpClient("meilisearch", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+// 文件存储统一通过 IFileStorage 抽象访问。当前默认 Local，后续可增加 MinIO/S3/OSS/COS 实现。
+builder.Services.AddSingleton<IFileStorage, LocalFileStorage>();
+
 builder.Services.AddScoped<IAppearanceSettingsService, AppearanceSettingsService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IKnowledgeBaseService, KnowledgeBaseService>();
@@ -32,6 +35,7 @@ builder.Services.AddScoped<IShareService, ShareService>();
 builder.Services.AddScoped<IAccessControlService, AccessControlService>();
 builder.Services.AddScoped<IExportTaskService, ExportTaskService>();
 builder.Services.AddScoped<IImportTaskService, ImportTaskService>();
+builder.Services.AddScoped<ICollaborationService, CollaborationService>();
 
 // 搜索引擎通过配置切换。默认 SQLite 无外部依赖；配置为 meilisearch 时使用独立全文搜索服务。
 builder.Services.AddScoped<IKnowledgeSearchService>(sp =>
@@ -82,5 +86,11 @@ app.UseAuthorization();
 app.UseMiddleware<AuditMiddleware>();
 app.MapOpenApi();
 app.MapControllers();
-app.MapGet("/api/health", () => Results.Ok(new { status = "ok", service = "KnowledgeBase.Api", time = DateTimeOffset.UtcNow }));
+app.MapGet("/api/health", () => Results.Ok(new
+{
+    status = "ok",
+    service = "KnowledgeBase.Api",
+    storage = app.Services.GetRequiredService<IFileStorage>().ProviderName,
+    time = DateTimeOffset.UtcNow
+}));
 app.Run();
