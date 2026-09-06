@@ -23,6 +23,7 @@ builder.Services.AddScoped<IKnowledgeAssetService, KnowledgeAssetService>();
 builder.Services.AddScoped<IAttachmentService, AttachmentService>();
 builder.Services.AddScoped<IContentExchangeService, ContentExchangeService>();
 builder.Services.AddScoped<IShareService, ShareService>();
+builder.Services.AddScoped<IAccessControlService, AccessControlService>();
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key 未配置");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
