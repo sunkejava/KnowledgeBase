@@ -85,6 +85,7 @@ public sealed class KnowledgeAssetService(KnowledgeDbContext db) : IKnowledgeAss
 
     /// <summary>
     /// 分页获取当前用户收藏，并支持按文档标题查询。
+    /// SQLite 下 DateTimeOffset 排序统一在投影后由 LINQ to Objects 完成，避免 provider 翻译异常。
     /// </summary>
     public Task<PageResult<FavoriteDocumentDto>> GetFavoritesPageAsync(Guid userId, PageQuery query, CancellationToken ct)
     {
@@ -92,18 +93,20 @@ public sealed class KnowledgeAssetService(KnowledgeDbContext db) : IKnowledgeAss
             from favorite in db.DocumentFavorites.AsNoTracking()
             join document in db.Documents.AsNoTracking() on favorite.DocumentId equals document.Id
             where favorite.UserId == userId
-            select new { favorite, document };
+            select new FavoriteDocumentDto(document.Id, document.Title, favorite.CreatedAt);
 
         if (!string.IsNullOrWhiteSpace(query.Keyword))
         {
             var keyword = query.Keyword.Trim();
-            source = source.Where(x => x.document.Title.Contains(keyword));
+            source = source.Where(x => x.Title.Contains(keyword));
         }
 
-        return source
-            .OrderByDescending(x => x.favorite.CreatedAt)
-            .Select(x => new FavoriteDocumentDto(x.document.Id, x.document.Title, x.favorite.CreatedAt))
-            .ToPageResultAsync(query.NormalizedPage, query.NormalizedPageSize, ct);
+        return source.ToSqliteSafeDateTimeOffsetPageAsync(
+            x => x.CreatedAt,
+            descending: true,
+            query.NormalizedPage,
+            query.NormalizedPageSize,
+            ct);
     }
 
     public async Task TrackRecentAsync(Guid userId, Guid documentId, CancellationToken ct)
@@ -119,6 +122,7 @@ public sealed class KnowledgeAssetService(KnowledgeDbContext db) : IKnowledgeAss
 
     /// <summary>
     /// 分页获取最近浏览记录，并支持按文档标题筛选。
+    /// SQLite 下 DateTimeOffset 排序统一走安全分页扩展。
     /// </summary>
     public Task<PageResult<RecentDocumentDto>> GetRecentPageAsync(Guid userId, PageQuery query, CancellationToken ct)
     {
@@ -126,18 +130,20 @@ public sealed class KnowledgeAssetService(KnowledgeDbContext db) : IKnowledgeAss
             from recent in db.DocumentRecentViews.AsNoTracking()
             join document in db.Documents.AsNoTracking() on recent.DocumentId equals document.Id
             where recent.UserId == userId
-            select new { recent, document };
+            select new RecentDocumentDto(document.Id, document.Title, recent.LastViewedAt, recent.ViewCount);
 
         if (!string.IsNullOrWhiteSpace(query.Keyword))
         {
             var keyword = query.Keyword.Trim();
-            source = source.Where(x => x.document.Title.Contains(keyword));
+            source = source.Where(x => x.Title.Contains(keyword));
         }
 
-        return source
-            .OrderByDescending(x => x.recent.LastViewedAt)
-            .Select(x => new RecentDocumentDto(x.document.Id, x.document.Title, x.recent.LastViewedAt, x.recent.ViewCount))
-            .ToPageResultAsync(query.NormalizedPage, query.NormalizedPageSize, ct);
+        return source.ToSqliteSafeDateTimeOffsetPageAsync(
+            x => x.LastViewedAt,
+            descending: true,
+            query.NormalizedPage,
+            query.NormalizedPageSize,
+            ct);
     }
 
     public async Task<VersionDto?> CreateVersionAsync(Guid documentId, Guid? editorId, string changeNote, CancellationToken ct)
