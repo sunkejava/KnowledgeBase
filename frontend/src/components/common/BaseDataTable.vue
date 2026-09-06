@@ -5,7 +5,7 @@ import type { TableColumn, TableColumnPreference } from '../../types/table'
 import { exportRowsToCsv } from '../../utils/exportCsv'
 
 const props = withDefaults(defineProps<{
-  rows: Record<string, any>[]
+  rows: any[]
   columns: TableColumn<any>[]
   loading?: boolean
   storageKey: string
@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
   showExport?: boolean
   showColumnSetting?: boolean
   showRefresh?: boolean
+  showActions?: boolean
   actionWidth?: number
 }>(), {
   loading: false,
@@ -26,12 +27,13 @@ const props = withDefaults(defineProps<{
   showExport: true,
   showColumnSetting: true,
   showRefresh: true,
+  showActions: true,
   actionWidth: 180
 })
 
 const emit = defineEmits<{
   refresh: []
-  rowDblclick: [row: Record<string, any>]
+  rowDblclick: [row: any]
 }>()
 
 const currentPage = ref(1)
@@ -76,7 +78,7 @@ watch(() => props.rows.length, () => {
 })
 watch(pageSize, value => localStorage.setItem(`kb_table_page_size_${props.storageKey}`, String(value)))
 
-function valueOf(row: Record<string, any>, column: TableColumn<any>) {
+function valueOf(row: any, column: TableColumn<any>) {
   return column.formatter ? column.formatter(row) : row[column.prop || column.key]
 }
 
@@ -159,7 +161,7 @@ function onSizeChange() {
           </slot>
         </template>
       </el-table-column>
-      <el-table-column v-if="$slots.actions" label="操作" fixed="right" :width="actionWidth">
+      <el-table-column v-if="showActions && $slots.actions" label="操作" fixed="right" :width="actionWidth">
         <template #default="scope"><slot name="actions" :row="scope.row" /></template>
       </el-table-column>
       <template #empty><slot name="empty">暂无数据</slot></template>
