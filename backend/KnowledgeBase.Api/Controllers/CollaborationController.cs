@@ -27,6 +27,18 @@ public sealed class CollaborationController(
         return Ok(await service.GetCommentsAsync(documentId, query, ct));
     }
 
+    /// <summary>获取当前文档可 @ 的知识库成员候选。</summary>
+    [HttpGet("documents/{documentId:guid}/mention-users")]
+    public async Task<ActionResult<IReadOnlyList<MentionUserDto>>> MentionUsers(
+        Guid documentId,
+        [FromQuery] string? keyword,
+        [FromQuery] int take = 30,
+        CancellationToken ct = default)
+    {
+        if (!await CanViewDocumentAsync(documentId, ct)) return Forbid();
+        return Ok(await service.GetMentionUsersAsync(documentId, keyword, take, ct));
+    }
+
     /// <summary>创建文档评论。</summary>
     [HttpPost("documents/{documentId:guid}/comments")]
     public async Task<ActionResult<DocumentCommentDto>> CreateComment(Guid documentId, CreateCommentRequest request, CancellationToken ct)
