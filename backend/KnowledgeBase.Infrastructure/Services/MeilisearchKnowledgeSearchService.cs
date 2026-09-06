@@ -148,7 +148,7 @@ public sealed class MeilisearchKnowledgeSearchService(
             null,
             ct,
             allowNotFound: true);
-        if (taskUid.HasValue) await WaitTaskAsync(client, taskUid.Value, ct);
+        if (taskUid >= 0) await WaitTaskAsync(client, taskUid, ct);
     }
 
     /// <summary>
@@ -183,7 +183,7 @@ public sealed class MeilisearchKnowledgeSearchService(
         await EnsureIndexAsync(client, configureWhenCreated: false, ct);
 
         var clearTask = await SendTaskAsync(client, HttpMethod.Delete, $"{IndexUrl}/documents", null, ct, allowNotFound: true);
-        if (clearTask.HasValue) await WaitTaskAsync(client, clearTask.Value, ct);
+        if (clearTask >= 0) await WaitTaskAsync(client, clearTask, ct);
 
         var searchableTask = await SendTaskAsync(
             client,
