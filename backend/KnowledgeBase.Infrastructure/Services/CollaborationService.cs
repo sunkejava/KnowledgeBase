@@ -64,6 +64,34 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
         return new PageResult<DocumentCommentDto>(items, total, query.NormalizedPage, query.NormalizedPageSize);
     }
 
+    /// <summary>获取文档所在知识库的成员候选，只返回评论 @成员需要的最小用户信息。</summary>
+    public async Task<IReadOnlyList<MentionUserDto>> GetMentionUsersAsync(Guid documentId, string? keyword, int take, CancellationToken ct)
+    {
+        take = Math.Clamp(take, 1, 50);
+        var knowledgeBaseId = await db.Documents.AsNoTracking()
+            .Where(x => x.Id == documentId)
+            .Select(x => (Guid?)x.KnowledgeBaseId)
+            .FirstOrDefaultAsync(ct);
+        if (!knowledgeBaseId.HasValue) return [];
+
+        var query =
+            from member in db.KnowledgeBaseMembers.AsNoTracking()
+            join user in db.Users.AsNoTracking() on member.UserId equals user.Id
+            where member.KnowledgeBaseId == knowledgeBaseId.Value && user.Enabled
+            select user;
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var value = keyword.Trim();
+            query = query.Where(x => x.UserName.Contains(value) || x.DisplayName.Contains(value));
+        }
+
+        return await query.OrderBy(x => x.UserName)
+            .Take(take)
+            .Select(x => new MentionUserDto(x.Id, x.UserName, x.DisplayName))
+            .ToListAsync(ct);
+    }
+
     /// <summary>创建评论，同时为被 @ 的用户生成站内通知。</summary>
     public async Task<DocumentCommentDto> CreateCommentAsync(Guid documentId, Guid userId, CreateCommentRequest request, CancellationToken ct)
     {
