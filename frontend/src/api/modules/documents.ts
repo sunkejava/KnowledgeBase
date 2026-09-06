@@ -22,7 +22,17 @@ export const documentApi = {
   downloadAttachment: (url: string) => http.get(url, { responseType: 'blob' }),
   deleteAttachment: (id: string) => http.delete(`/attachments/${id}`),
   exportMarkdown: (id: string) => http.get(`/content-exchange/documents/${id}/markdown`, { responseType: 'blob' }),
-  importMarkdown: (knowledgeBaseId: string, form: FormData, parentId?: string) => http.post(`/content-exchange/knowledge-bases/${knowledgeBaseId}/markdown`, form, { params: { parentId }, headers: { 'Content-Type': 'multipart/form-data' } }),
+  importDocument: (knowledgeBaseId: string, form: FormData, parentId?: string) => http.post(
+    `/content-exchange/knowledge-bases/${knowledgeBaseId}/document`,
+    form,
+    { params: parentId ? { parentId } : undefined, headers: { 'Content-Type': 'multipart/form-data' } }
+  ),
+  // 保留旧方法名供历史代码兼容，实际统一走常见文档导入接口。
+  importMarkdown: (knowledgeBaseId: string, form: FormData, parentId?: string) => http.post(
+    `/content-exchange/knowledge-bases/${knowledgeBaseId}/document`,
+    form,
+    { params: parentId ? { parentId } : undefined, headers: { 'Content-Type': 'multipart/form-data' } }
+  ),
   createShare: (id: string, expiresAt: string | null = null, password: string | null = null) => http.post(`/share/documents/${id}`, { expiresAt, password }),
   shares: (id: string) => http.get(`/share/documents/${id}`),
   disableShare: (id: string) => http.delete(`/share/links/${id}`),
