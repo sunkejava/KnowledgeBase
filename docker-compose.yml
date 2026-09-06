@@ -6,6 +6,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Default: Data Source=/app/data/knowledgebase.db
+      Storage__Provider: ${STORAGE_PROVIDER:-local}
+      Storage__Local__Root: /app/storage
       Search__Provider: ${SEARCH_PROVIDER:-sqlite}
       Search__Meilisearch__Endpoint: ${MEILISEARCH_ENDPOINT:-http://meilisearch:7700}
       Search__Meilisearch__ApiKey: ${MEILISEARCH_API_KEY:-}
