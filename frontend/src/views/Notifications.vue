@@ -6,15 +6,16 @@ import BaseDataTable from '../components/common/BaseDataTable.vue'
 import PageHeader from '../components/common/PageHeader.vue'
 import type { TableColumn } from '../types/table'
 import { collaborationApi } from '../api/modules/collaboration'
+import { useNotificationStore } from '../stores/notifications'
 
 const router = useRouter()
+const notificationStore = useNotificationStore()
 const rows = ref<any[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
 const keyword = ref('')
-const unreadCount = ref(0)
 
 const columns: TableColumn<any>[] = [
   { key: 'isRead', label: '状态', width: 90, formatter: row => row.isRead ? '已读' : '未读' },
@@ -27,13 +28,10 @@ const columns: TableColumn<any>[] = [
 async function load() {
   loading.value = true
   try {
-    const [{ data }, summary] = await Promise.all([
-      collaborationApi.notifications(page.value, pageSize.value, keyword.value),
-      collaborationApi.notificationSummary()
-    ])
+    const { data } = await collaborationApi.notifications(page.value, pageSize.value, keyword.value)
     rows.value = data.items
     total.value = data.total
-    unreadCount.value = summary.data.unreadCount
+    await notificationStore.refresh()
   } finally {
     loading.value = false
   }
@@ -52,8 +50,9 @@ async function search() {
 
 async function markRead(row: any) {
   if (!row.isRead) await collaborationApi.markRead(row.id)
+  await notificationStore.refresh()
   if (row.targetUrl) await router.push(row.targetUrl)
-  await load()
+  else await load()
 }
 
 async function markAllRead() {
@@ -67,7 +66,7 @@ onMounted(load)
 
 <template>
   <section class="page">
-    <PageHeader title="通知中心" :description="`统一承载评论 @成员、系统提醒和后续任务通知。当前未读 ${unreadCount} 条。`">
+    <PageHeader title="通知中心" :description="`统一承载评论 @成员、系统提醒和后续任务通知。当前未读 ${notificationStore.unreadCount} 条。`">
       <template #actions>
         <el-input v-model="keyword" clearable placeholder="搜索标题或内容" style="width:260px" @keyup.enter="search"/>
         <el-button @click="search">查询</el-button>
