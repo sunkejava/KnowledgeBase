@@ -14,13 +14,12 @@ namespace KnowledgeBase.Api.Controllers;
 [Route("api/attachments")]
 public sealed class AttachmentsController(IAttachmentService service, IAccessControlService access) : ControllerBase
 {
-    private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-    private bool IsSuperAdmin => User.IsInRole("SUPER_ADMIN");
+    private Guid CurrentUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet("document/{documentId:guid}")]
     public async Task<ActionResult<IReadOnlyList<AttachmentDto>>> List(Guid documentId, CancellationToken ct)
     {
-        if (!await access.CanViewDocumentAsync(documentId, UserId, IsSuperAdmin, ct)) return Forbid();
+        if (!await CanViewDocumentAsync(documentId, ct)) return Forbid();
         return Ok(await service.GetListAsync(documentId, ct));
     }
 
@@ -28,10 +27,10 @@ public sealed class AttachmentsController(IAttachmentService service, IAccessCon
     [RequestSizeLimit(52_428_800)]
     public async Task<ActionResult<AttachmentDto>> Upload(Guid documentId, IFormFile file, CancellationToken ct)
     {
-        if (!await access.CanEditDocumentAsync(documentId, UserId, IsSuperAdmin, ct)) return Forbid();
+        if (!await CanEditDocumentAsync(documentId, ct)) return Forbid();
         if (file.Length <= 0) return BadRequest(new { message = "文件为空" });
         await using var stream = file.OpenReadStream();
-        return Ok(await service.SaveAsync(documentId, file.FileName, file.ContentType, file.Length, stream, UserId, ct));
+        return Ok(await service.SaveAsync(documentId, file.FileName, file.ContentType, file.Length, stream, CurrentUserId, ct));
     }
 
     [HttpGet("{id:guid}/download")]
@@ -39,7 +38,7 @@ public sealed class AttachmentsController(IAttachmentService service, IAccessCon
     {
         var file = await service.GetAsync(id, ct);
         if (file is null) return NotFound();
-        if (!await access.CanViewDocumentAsync(file.Value.DocumentId, UserId, IsSuperAdmin, ct)) return Forbid();
+        if (!await CanViewDocumentAsync(file.Value.DocumentId, ct)) return Forbid();
         if (!System.IO.File.Exists(file.Value.Path)) return NotFound();
         return PhysicalFile(file.Value.Path, file.Value.ContentType, string.IsNullOrWhiteSpace(file.Value.FileName) ? "attachment" : file.Value.FileName);
     }
@@ -49,7 +48,17 @@ public sealed class AttachmentsController(IAttachmentService service, IAccessCon
     {
         var file = await service.GetAsync(id, ct);
         if (file is null) return NotFound();
-        if (!await access.CanEditDocumentAsync(file.Value.DocumentId, UserId, IsSuperAdmin, ct)) return Forbid();
+        if (!await CanEditDocumentAsync(file.Value.DocumentId, ct)) return Forbid();
         return await service.DeleteAsync(id, ct) ? NoContent() : NotFound();
     }
+
+    private Task<bool> CanViewDocumentAsync(Guid documentId, CancellationToken ct)
+        => User.IsInRole("SUPER_ADMIN")
+            ? Task.FromResult(true)
+            : access.CanViewDocumentAsync(documentId, CurrentUserId, ct);
+
+    private Task<bool> CanEditDocumentAsync(Guid documentId, CancellationToken ct)
+        => User.IsInRole("SUPER_ADMIN")
+            ? Task.FromResult(true)
+            : access.CanEditDocumentAsync(documentId, CurrentUserId, ct);
 }
