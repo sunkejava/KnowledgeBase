@@ -11,29 +11,45 @@ namespace KnowledgeBase.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/export-tasks")]
-public sealed class ExportTasksController(IExportTaskService service,IAccessControlService accessControl):ControllerBase
+public sealed class ExportTasksController(IExportTaskService service, IAccessControlService accessControl) : ControllerBase
 {
-    private Guid UserId=>Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    private bool IsSuperAdmin => User.IsInRole("SUPER_ADMIN");
 
     /// <summary>创建知识库异步导出任务。</summary>
     [HttpPost]
-    public async Task<ActionResult<ExportTaskDto>> Create(CreateExportTaskRequest request,CancellationToken ct)
+    public async Task<ActionResult<ExportTaskDto>> Create(CreateExportTaskRequest request, CancellationToken ct)
     {
-        if(!User.IsInRole("SUPER_ADMIN")&&!await accessControl.CanViewKnowledgeBaseAsync(request.KnowledgeBaseId,UserId,ct))return Forbid();
-        return Ok(await service.CreateAsync(UserId,request.KnowledgeBaseId,request.Format,ct));
+        if (!IsSuperAdmin && !await accessControl.CanViewKnowledgeBaseAsync(request.KnowledgeBaseId, UserId, ct)) return Forbid();
+        return Ok(await service.CreateAsync(UserId, request.KnowledgeBaseId, request.Format, ct));
     }
 
     /// <summary>分页获取当前用户的导出任务。</summary>
     [HttpGet]
-    public Task<PageResult<ExportTaskDto>> Page([FromQuery]int page=1,[FromQuery]int pageSize=20,CancellationToken ct=default)
-        =>service.GetPageAsync(UserId,page,pageSize,ct);
+    public Task<PageResult<ExportTaskDto>> Page([FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+        => service.GetPageAsync(UserId, page, pageSize, ct);
+
+    /// <summary>取消尚未开始的导出任务。</summary>
+    [HttpPost("{id:guid}/cancel")]
+    public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
+        => await service.CancelAsync(id, UserId, IsSuperAdmin, ct) ? NoContent() : Conflict(new { message = "仅排队中的任务可以取消" });
+
+    /// <summary>重试失败或已取消的导出任务。</summary>
+    [HttpPost("{id:guid}/retry")]
+    public async Task<IActionResult> Retry(Guid id, CancellationToken ct)
+        => await service.RetryAsync(id, UserId, IsSuperAdmin, ct) ? NoContent() : Conflict(new { message = "仅失败或已取消任务可以重试" });
+
+    /// <summary>清理指定保留天数之前的已结束任务及导出文件。</summary>
+    [HttpDelete("cleanup")]
+    public async Task<IActionResult> Cleanup([FromQuery] int olderThanDays = 7, CancellationToken ct = default)
+        => Ok(new { deletedCount = await service.CleanupAsync(UserId, IsSuperAdmin, olderThanDays, ct) });
 
     /// <summary>下载已完成的导出文件。</summary>
     [HttpGet("{id:guid}/download")]
-    public async Task<IActionResult> Download(Guid id,CancellationToken ct)
+    public async Task<IActionResult> Download(Guid id, CancellationToken ct)
     {
-        var file=await service.GetFileAsync(id,UserId,User.IsInRole("SUPER_ADMIN"),ct);
-        if(file is null||!System.IO.File.Exists(file.Value.Path))return NotFound();
-        return PhysicalFile(file.Value.Path,"application/zip",file.Value.FileName);
+        var file = await service.GetFileAsync(id, UserId, IsSuperAdmin, ct);
+        if (file is null || !System.IO.File.Exists(file.Value.Path)) return NotFound();
+        return PhysicalFile(file.Value.Path, "application/zip", file.Value.FileName);
     }
 }
