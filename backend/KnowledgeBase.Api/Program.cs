@@ -26,7 +26,9 @@ builder.Services.AddScoped<IContentExchangeService, ContentExchangeService>();
 builder.Services.AddScoped<IShareService, ShareService>();
 builder.Services.AddScoped<IAccessControlService, AccessControlService>();
 builder.Services.AddScoped<IExportTaskService, ExportTaskService>();
+builder.Services.AddScoped<IImportTaskService, ImportTaskService>();
 builder.Services.AddHostedService<ExportTaskWorker>();
+builder.Services.AddHostedService<ImportTaskWorker>();
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key 未配置");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
