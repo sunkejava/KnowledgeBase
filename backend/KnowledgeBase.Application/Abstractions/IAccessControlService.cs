@@ -7,6 +7,8 @@ namespace KnowledgeBase.Application.Abstractions;
 /// </summary>
 public interface IAccessControlService
 {
+    /// <summary>获取权限面板可选用户。</summary>
+    Task<IReadOnlyList<PermissionUserLookupDto>> SearchUsersAsync(string? keyword, int take, CancellationToken ct);
     /// <summary>获取知识库成员列表。</summary>
     Task<IReadOnlyList<KnowledgeBaseMemberDto>> GetKnowledgeBaseMembersAsync(Guid knowledgeBaseId, CancellationToken ct);
     /// <summary>新增或更新知识库成员。</summary>
