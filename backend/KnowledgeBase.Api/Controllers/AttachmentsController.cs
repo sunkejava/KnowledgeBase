@@ -36,19 +36,21 @@ public sealed class AttachmentsController(IAttachmentService service, IAccessCon
     [HttpGet("{id:guid}/download")]
     public async Task<IActionResult> Download(Guid id, CancellationToken ct)
     {
-        var file = await service.GetAsync(id, ct);
+        var documentId = await service.GetDocumentIdAsync(id, ct);
+        if (!documentId.HasValue) return NotFound();
+        if (!await CanViewDocumentAsync(documentId.Value, ct)) return Forbid();
+
+        var file = await service.OpenReadAsync(id, ct);
         if (file is null) return NotFound();
-        if (!await CanViewDocumentAsync(file.Value.DocumentId, ct)) return Forbid();
-        if (!System.IO.File.Exists(file.Value.Path)) return NotFound();
-        return PhysicalFile(file.Value.Path, file.Value.ContentType, string.IsNullOrWhiteSpace(file.Value.FileName) ? "attachment" : file.Value.FileName);
+        return File(file.Value.Stream, file.Value.ContentType, string.IsNullOrWhiteSpace(file.Value.FileName) ? "attachment" : file.Value.FileName, enableRangeProcessing: true);
     }
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var file = await service.GetAsync(id, ct);
-        if (file is null) return NotFound();
-        if (!await CanEditDocumentAsync(file.Value.DocumentId, ct)) return Forbid();
+        var documentId = await service.GetDocumentIdAsync(id, ct);
+        if (!documentId.HasValue) return NotFound();
+        if (!await CanEditDocumentAsync(documentId.Value, ct)) return Forbid();
         return await service.DeleteAsync(id, ct) ? NoContent() : NotFound();
     }
 
