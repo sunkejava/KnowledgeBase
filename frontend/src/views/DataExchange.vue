@@ -20,9 +20,11 @@ const exportPageSize = ref(20)
 const importPageSize = ref(20)
 const exportLoading = ref(false)
 const importLoading = ref(false)
+const documentImporting = ref(false)
 const zipInput = ref<HTMLInputElement | null>(null)
-const htmlInput = ref<HTMLInputElement | null>(null)
-const docxInput = ref<HTMLInputElement | null>(null)
+const documentInput = ref<HTMLInputElement | null>(null)
+
+const supportedDocumentAccept = '.txt,.md,.markdown,.html,.htm,.pdf,.doc,.docx,.xls,.xlsx,.csv'
 
 const exportColumns: TableColumn<any>[] = [
   { key: 'name', label: '任务名称', minWidth: 260 },
@@ -121,23 +123,34 @@ async function importZip(event: Event) {
   ElMessage.success('ZIP 已上传，导入任务进入队列')
   await loadImportTasks()
 }
-async function importHtml(event: Event) {
+
+/** 一次可选择多个常见文档，前端顺序提交，单个失败不会阻止后续文件。 */
+async function importDocuments(event: Event) {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || !selectedKnowledgeBaseId.value) return
-  const form = new FormData(); form.append('file', file)
-  await exchangeApi.importHtml(selectedKnowledgeBaseId.value, form)
-  input.value = ''
-  ElMessage.success('HTML 已转换为 Markdown 并导入')
-}
-async function importDocx(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || !selectedKnowledgeBaseId.value) return
-  const form = new FormData(); form.append('file', file)
-  await exchangeApi.importDocx(selectedKnowledgeBaseId.value, form)
-  input.value = ''
-  ElMessage.success('DOCX 已提取文本和标题层级并导入')
+  const files = Array.from(input.files || [])
+  if (!files.length || !selectedKnowledgeBaseId.value) return
+
+  documentImporting.value = true
+  let success = 0
+  const failed: string[] = []
+  try {
+    for (const file of files) {
+      try {
+        const form = new FormData()
+        form.append('file', file)
+        await exchangeApi.importDocument(selectedKnowledgeBaseId.value, form)
+        success++
+      } catch {
+        failed.push(file.name)
+      }
+    }
+  } finally {
+    input.value = ''
+    documentImporting.value = false
+  }
+
+  if (success) ElMessage.success(`成功导入 ${success} 个文档`)
+  if (failed.length) ElMessage.warning(`以下文件导入失败：${failed.join('、')}`)
 }
 
 onMounted(async () => { await Promise.all([loadBaseOptions(), loadExportTasks(), loadImportTasks()]) })
@@ -145,18 +158,24 @@ onMounted(async () => { await Promise.all([loadBaseOptions(), loadExportTasks(),
 
 <template>
   <section class="page">
-    <PageHeader title="数据交换" description="知识库导出与批量导入统一通过任务中心管理；支持 Markdown ZIP、HTML 与 DOCX。">
+    <PageHeader title="数据交换" description="支持 TXT、Markdown、HTML、PDF、DOC/DOCX、XLS/XLSX、CSV 直接导入；Markdown ZIP 使用异步任务批量处理。">
       <template #actions>
         <el-select v-model="selectedKnowledgeBaseId" filterable placeholder="选择知识库" style="width:260px"><el-option v-for="item in knowledgeBases" :key="item.id" :label="item.name" :value="item.id"/></el-select>
         <el-button type="primary" @click="createExport">创建 ZIP 导出任务</el-button>
+        <input ref="documentInput" type="file" :accept="supportedDocumentAccept" multiple hidden @change="importDocuments"/>
+        <el-button :loading="documentImporting" @click="documentInput?.click()">导入常见文档</el-button>
         <input ref="zipInput" type="file" accept=".zip" hidden @change="importZip"/>
         <el-button @click="zipInput?.click()">异步导入 Markdown ZIP</el-button>
-        <input ref="htmlInput" type="file" accept=".html,.htm" hidden @change="importHtml"/>
-        <el-button @click="htmlInput?.click()">导入 HTML</el-button>
-        <input ref="docxInput" type="file" accept=".docx" hidden @change="importDocx"/>
-        <el-button @click="docxInput?.click()">导入 DOCX</el-button>
       </template>
     </PageHeader>
+
+    <el-alert
+      type="info"
+      :closable="false"
+      show-icon
+      style="margin-bottom:16px"
+      title="支持 .txt / .md / .markdown / .html / .htm / .pdf / .doc / .docx / .xls / .xlsx / .csv；扫描件或纯图片 PDF 需要 OCR 后再导入。"
+    />
 
     <el-tabs v-model="tab">
       <el-tab-pane label="导出任务" name="export">
