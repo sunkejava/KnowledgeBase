@@ -47,11 +47,33 @@ public sealed class ContentExchangeController(IContentExchangeService service, I
     {
         if (!await CanEditKnowledgeBaseAsync(knowledgeBaseId, ct)) return Forbid();
         if (parentId.HasValue && !await CanEditDocumentAsync(parentId.Value, ct)) return Forbid();
-        if (file.Length == 0 || !Path.GetExtension(file.FileName).Equals(".html", StringComparison.OrdinalIgnoreCase) && !Path.GetExtension(file.FileName).Equals(".htm", StringComparison.OrdinalIgnoreCase))
+        var ext = Path.GetExtension(file.FileName);
+        if (file.Length == 0 || (!ext.Equals(".html", StringComparison.OrdinalIgnoreCase) && !ext.Equals(".htm", StringComparison.OrdinalIgnoreCase)))
             return BadRequest(new { message = "仅支持 HTML 文件" });
 
         using var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8, true);
         return Ok(await service.ImportHtmlAsync(knowledgeBaseId, parentId, file.FileName, await reader.ReadToEndAsync(ct), ct));
+    }
+
+    /// <summary>导入 DOCX 文档，提取文本和标题层级后转换为 Markdown。</summary>
+    [HttpPost("knowledge-bases/{knowledgeBaseId:guid}/docx")]
+    [RequestSizeLimit(50 * 1024 * 1024)]
+    public async Task<ActionResult<ImportMarkdownResultDto>> ImportDocx(Guid knowledgeBaseId, [FromQuery] Guid? parentId, IFormFile file, CancellationToken ct)
+    {
+        if (!await CanEditKnowledgeBaseAsync(knowledgeBaseId, ct)) return Forbid();
+        if (parentId.HasValue && !await CanEditDocumentAsync(parentId.Value, ct)) return Forbid();
+        if (file.Length == 0 || !Path.GetExtension(file.FileName).Equals(".docx", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "仅支持 DOCX 文件" });
+
+        await using var stream = file.OpenReadStream();
+        try
+        {
+            return Ok(await service.ImportDocxAsync(knowledgeBaseId, parentId, file.FileName, stream, ct));
+        }
+        catch (InvalidDataException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     /// <summary>同步导入 Markdown ZIP。较大 ZIP 建议使用 /api/import-tasks 异步任务接口。</summary>
