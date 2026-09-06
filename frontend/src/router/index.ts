@@ -5,9 +5,11 @@ import KnowledgeWorkspace from '../views/KnowledgeWorkspace.vue'
 import KnowledgeCenter from '../views/KnowledgeCenter.vue'
 import Login from '../views/Login.vue'
 import SystemManagement from '../views/SystemManagement.vue'
+import PublicShare from '../views/PublicShare.vue'
 
 const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/login', name: 'login', component: Login, meta: { public: true } },
+  { path: '/share/:token', name: 'public-share', component: PublicShare, meta: { public: true } },
   { path: '/', component: Dashboard },
   { path: '/knowledge-bases', component: KnowledgeBases },
   { path: '/knowledge-bases/:id', component: KnowledgeWorkspace },
