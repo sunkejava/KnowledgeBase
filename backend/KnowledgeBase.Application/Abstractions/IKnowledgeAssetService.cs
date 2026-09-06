@@ -23,15 +23,4 @@ public interface IKnowledgeAssetService
     Task<IReadOnlyList<VersionDto>> GetVersionsAsync(Guid documentId, CancellationToken ct);
     Task<VersionDetailDto?> GetVersionAsync(Guid versionId, CancellationToken ct);
     Task<bool> RestoreVersionAsync(Guid versionId, Guid? editorId, CancellationToken ct);
-
-    /// <summary>
-    /// 按当前用户资源权限执行全文搜索。普通用户只能搜索自己有权访问的知识库。
-    /// </summary>
-    Task<PageResult<SearchResultDto>> SearchPageAsync(
-        string keyword,
-        Guid userId,
-        bool isSuperAdmin,
-        Guid? knowledgeBaseId,
-        PageQuery query,
-        CancellationToken ct);
 }
