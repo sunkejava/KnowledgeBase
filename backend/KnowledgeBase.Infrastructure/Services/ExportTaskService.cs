@@ -65,14 +65,19 @@ public sealed class ExportTaskService(KnowledgeDbContext db, IFileStorage storag
         return true;
     }
 
-    /// <summary>清理指定保留天数之前的已结束任务及导出文件。</summary>
+    /// <summary>
+    /// 清理指定保留天数之前的已结束任务及导出文件。
+    /// SQLite 不直接对 DateTimeOffset 执行范围比较，因此数据库仅做状态/用户过滤，时间阈值在内存中判断。
+    /// </summary>
     public async Task<int> CleanupAsync(Guid userId, bool isSuperAdmin, int olderThanDays, CancellationToken ct)
     {
         olderThanDays = Math.Clamp(olderThanDays, 1, 3650);
         var cutoff = DateTimeOffset.UtcNow.AddDays(-olderThanDays);
-        var query = db.ExportTasks.Where(x => x.CreatedAt < cutoff && x.Status != "Pending" && x.Status != "Running");
+        var query = db.ExportTasks.Where(x => x.Status != "Pending" && x.Status != "Running");
         if (!isSuperAdmin) query = query.Where(x => x.UserId == userId);
-        var rows = await query.ToListAsync(ct);
+        var candidates = await query.ToListAsync(ct);
+        var rows = candidates.Where(x => x.CreatedAt < cutoff).ToList();
+
         foreach (var row in rows)
         {
             if (!string.IsNullOrWhiteSpace(row.RelativePath))
