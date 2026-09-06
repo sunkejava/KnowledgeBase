@@ -33,6 +33,7 @@ public sealed class ExportTask
     {
         Status = "Running";
         StartedAt = DateTimeOffset.UtcNow;
+        CompletedAt = null;
         ErrorMessage = null;
     }
 
@@ -42,6 +43,7 @@ public sealed class ExportTask
         Status = "Completed";
         FileName = fileName;
         RelativePath = relativePath;
+        ErrorMessage = null;
         CompletedAt = DateTimeOffset.UtcNow;
     }
 
@@ -51,5 +53,27 @@ public sealed class ExportTask
         Status = "Failed";
         ErrorMessage = string.IsNullOrWhiteSpace(error) ? "导出任务执行失败" : error[..Math.Min(error.Length, 1000)];
         CompletedAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>取消尚未开始的任务。</summary>
+    public bool Cancel()
+    {
+        if (Status != "Pending") return false;
+        Status = "Cancelled";
+        CompletedAt = DateTimeOffset.UtcNow;
+        return true;
+    }
+
+    /// <summary>将失败或已取消任务重新放回队列。</summary>
+    public bool Retry()
+    {
+        if (Status is not ("Failed" or "Cancelled")) return false;
+        Status = "Pending";
+        FileName = null;
+        RelativePath = null;
+        ErrorMessage = null;
+        StartedAt = null;
+        CompletedAt = null;
+        return true;
     }
 }
