@@ -12,6 +12,21 @@ namespace KnowledgeBase.Infrastructure.Services;
 /// </summary>
 public sealed class AccessControlService(KnowledgeDbContext db) : IAccessControlService
 {
+    public async Task<IReadOnlyList<PermissionUserLookupDto>> SearchUsersAsync(string? keyword, int take, CancellationToken ct)
+    {
+        var query = db.Users.AsNoTracking().Where(x => x.Enabled);
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var value = keyword.Trim();
+            query = query.Where(x => x.UserName.Contains(value) || x.DisplayName.Contains(value));
+        }
+
+        return await query.OrderBy(x => x.DisplayName)
+            .Take(Math.Clamp(take, 1, 100))
+            .Select(x => new PermissionUserLookupDto(x.Id, x.UserName, x.DisplayName))
+            .ToListAsync(ct);
+    }
+
     public async Task<IReadOnlyList<KnowledgeBaseMemberDto>> GetKnowledgeBaseMembersAsync(Guid knowledgeBaseId, CancellationToken ct)
         => await (
             from member in db.KnowledgeBaseMembers.AsNoTracking()
@@ -24,18 +39,13 @@ public sealed class AccessControlService(KnowledgeDbContext db) : IAccessControl
     public async Task<KnowledgeBaseMemberDto> SetKnowledgeBaseMemberAsync(Guid knowledgeBaseId, SetKnowledgeBaseMemberRequest request, CancellationToken ct)
     {
         var user = await db.Users.AsNoTracking().FirstAsync(x => x.Id == request.UserId, ct);
-        var entity = await db.KnowledgeBaseMembers.FirstOrDefaultAsync(
-            x => x.KnowledgeBaseId == knowledgeBaseId && x.UserId == request.UserId, ct);
-
+        var entity = await db.KnowledgeBaseMembers.FirstOrDefaultAsync(x => x.KnowledgeBaseId == knowledgeBaseId && x.UserId == request.UserId, ct);
         if (entity is null)
         {
             entity = new KnowledgeBaseMember(knowledgeBaseId, request.UserId, NormalizeRole(request.Role));
             db.KnowledgeBaseMembers.Add(entity);
         }
-        else
-        {
-            entity.SetRole(NormalizeRole(request.Role));
-        }
+        else entity.SetRole(NormalizeRole(request.Role));
 
         await db.SaveChangesAsync(ct);
         return new(entity.KnowledgeBaseId, entity.UserId, user.UserName, user.DisplayName, entity.Role, entity.CreatedAt);
@@ -43,10 +53,8 @@ public sealed class AccessControlService(KnowledgeDbContext db) : IAccessControl
 
     public async Task<bool> RemoveKnowledgeBaseMemberAsync(Guid knowledgeBaseId, Guid userId, CancellationToken ct)
     {
-        var entity = await db.KnowledgeBaseMembers.FirstOrDefaultAsync(
-            x => x.KnowledgeBaseId == knowledgeBaseId && x.UserId == userId, ct);
+        var entity = await db.KnowledgeBaseMembers.FirstOrDefaultAsync(x => x.KnowledgeBaseId == knowledgeBaseId && x.UserId == userId, ct);
         if (entity is null) return false;
-
         db.KnowledgeBaseMembers.Remove(entity);
         await db.SaveChangesAsync(ct);
         return true;
@@ -58,31 +66,19 @@ public sealed class AccessControlService(KnowledgeDbContext db) : IAccessControl
             join user in db.Users.AsNoTracking() on permission.UserId equals user.Id
             where permission.DocumentId == documentId
             orderby user.DisplayName
-            select new DocumentPermissionDto(
-                permission.DocumentId,
-                permission.UserId,
-                user.UserName,
-                user.DisplayName,
-                permission.CanView,
-                permission.CanEdit,
-                permission.CanManage)
+            select new DocumentPermissionDto(permission.DocumentId, permission.UserId, user.UserName, user.DisplayName, permission.CanView, permission.CanEdit, permission.CanManage)
         ).ToListAsync(ct);
 
     public async Task<DocumentPermissionDto> SetDocumentPermissionAsync(Guid documentId, SetDocumentPermissionRequest request, CancellationToken ct)
     {
         var user = await db.Users.AsNoTracking().FirstAsync(x => x.Id == request.UserId, ct);
-        var entity = await db.DocumentUserPermissions.FirstOrDefaultAsync(
-            x => x.DocumentId == documentId && x.UserId == request.UserId, ct);
-
+        var entity = await db.DocumentUserPermissions.FirstOrDefaultAsync(x => x.DocumentId == documentId && x.UserId == request.UserId, ct);
         if (entity is null)
         {
             entity = new DocumentUserPermission(documentId, request.UserId, request.CanView, request.CanEdit, request.CanManage);
             db.DocumentUserPermissions.Add(entity);
         }
-        else
-        {
-            entity.Update(request.CanView, request.CanEdit, request.CanManage);
-        }
+        else entity.Update(request.CanView, request.CanEdit, request.CanManage);
 
         await db.SaveChangesAsync(ct);
         return new(entity.DocumentId, entity.UserId, user.UserName, user.DisplayName, entity.CanView, entity.CanEdit, entity.CanManage);
@@ -90,10 +86,8 @@ public sealed class AccessControlService(KnowledgeDbContext db) : IAccessControl
 
     public async Task<bool> RemoveDocumentPermissionAsync(Guid documentId, Guid userId, CancellationToken ct)
     {
-        var entity = await db.DocumentUserPermissions.FirstOrDefaultAsync(
-            x => x.DocumentId == documentId && x.UserId == userId, ct);
+        var entity = await db.DocumentUserPermissions.FirstOrDefaultAsync(x => x.DocumentId == documentId && x.UserId == userId, ct);
         if (entity is null) return false;
-
         db.DocumentUserPermissions.Remove(entity);
         await db.SaveChangesAsync(ct);
         return true;
@@ -110,43 +104,33 @@ public sealed class AccessControlService(KnowledgeDbContext db) : IAccessControl
 
     public async Task<bool> CanViewDocumentAsync(Guid documentId, Guid userId, CancellationToken ct)
     {
-        var explicitPermission = await db.DocumentUserPermissions.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.DocumentId == documentId && x.UserId == userId, ct);
+        var explicitPermission = await db.DocumentUserPermissions.AsNoTracking().FirstOrDefaultAsync(x => x.DocumentId == documentId && x.UserId == userId, ct);
         if (explicitPermission is not null) return explicitPermission.CanView || explicitPermission.CanEdit || explicitPermission.CanManage;
-
         var knowledgeBaseId = await GetDocumentKnowledgeBaseIdAsync(documentId, ct);
         return knowledgeBaseId.HasValue && await CanViewKnowledgeBaseAsync(knowledgeBaseId.Value, userId, ct);
     }
 
     public async Task<bool> CanEditDocumentAsync(Guid documentId, Guid userId, CancellationToken ct)
     {
-        var explicitPermission = await db.DocumentUserPermissions.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.DocumentId == documentId && x.UserId == userId, ct);
+        var explicitPermission = await db.DocumentUserPermissions.AsNoTracking().FirstOrDefaultAsync(x => x.DocumentId == documentId && x.UserId == userId, ct);
         if (explicitPermission is not null) return explicitPermission.CanEdit || explicitPermission.CanManage;
-
         var knowledgeBaseId = await GetDocumentKnowledgeBaseIdAsync(documentId, ct);
         return knowledgeBaseId.HasValue && await CanEditKnowledgeBaseAsync(knowledgeBaseId.Value, userId, ct);
     }
 
     public async Task<bool> CanManageDocumentAsync(Guid documentId, Guid userId, CancellationToken ct)
     {
-        var explicitPermission = await db.DocumentUserPermissions.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.DocumentId == documentId && x.UserId == userId, ct);
+        var explicitPermission = await db.DocumentUserPermissions.AsNoTracking().FirstOrDefaultAsync(x => x.DocumentId == documentId && x.UserId == userId, ct);
         if (explicitPermission is not null) return explicitPermission.CanManage;
-
         var knowledgeBaseId = await GetDocumentKnowledgeBaseIdAsync(documentId, ct);
         return knowledgeBaseId.HasValue && await CanManageKnowledgeBaseAsync(knowledgeBaseId.Value, userId, ct);
     }
 
     private Task<bool> HasKnowledgeBaseRoleAsync(Guid knowledgeBaseId, Guid userId, string[] roles, CancellationToken ct)
-        => db.KnowledgeBaseMembers.AsNoTracking().AnyAsync(
-            x => x.KnowledgeBaseId == knowledgeBaseId && x.UserId == userId && roles.Contains(x.Role), ct);
+        => db.KnowledgeBaseMembers.AsNoTracking().AnyAsync(x => x.KnowledgeBaseId == knowledgeBaseId && x.UserId == userId && roles.Contains(x.Role), ct);
 
     private Task<Guid?> GetDocumentKnowledgeBaseIdAsync(Guid documentId, CancellationToken ct)
-        => db.Documents.AsNoTracking()
-            .Where(x => x.Id == documentId)
-            .Select(x => (Guid?)x.KnowledgeBaseId)
-            .FirstOrDefaultAsync(ct);
+        => db.Documents.AsNoTracking().Where(x => x.Id == documentId).Select(x => (Guid?)x.KnowledgeBaseId).FirstOrDefaultAsync(ct);
 
     private static string NormalizeRole(string role)
         => role.Trim().ToLowerInvariant() switch
