@@ -1,7 +1,20 @@
 import axios from 'axios'
 
+const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+
+/**
+ * 需要登录鉴权的业务请求客户端。
+ */
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api',
+  baseURL,
+  timeout: 15000
+})
+
+/**
+ * 无需登录的公共请求客户端，例如公开分享页面。
+ */
+export const publicHttp = axios.create({
+  baseURL,
   timeout: 15000
 })
 
