@@ -13,22 +13,21 @@ namespace KnowledgeBase.Api.Controllers;
 [Route("api/share")]
 public sealed class ShareController(IShareService service, IAccessControlService access) : ControllerBase
 {
-    private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-    private bool IsSuperAdmin => User.IsInRole("SUPER_ADMIN");
+    private Guid CurrentUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [Authorize]
     [HttpPost("documents/{documentId:guid}")]
     public async Task<ActionResult<ShareLinkDto>> Create(Guid documentId, CreateShareLinkRequest request, CancellationToken ct)
     {
-        if (!await access.CanManageDocumentAsync(documentId, UserId, IsSuperAdmin, ct)) return Forbid();
-        return await service.CreateAsync(documentId, UserId, request.ExpiresAt, ct) is { } item ? Ok(item) : NotFound();
+        if (!await CanManageDocumentAsync(documentId, ct)) return Forbid();
+        return await service.CreateAsync(documentId, CurrentUserId, request.ExpiresAt, ct) is { } item ? Ok(item) : NotFound();
     }
 
     [Authorize]
     [HttpGet("documents/{documentId:guid}")]
     public async Task<ActionResult<IReadOnlyList<ShareLinkDto>>> List(Guid documentId, CancellationToken ct)
     {
-        if (!await access.CanManageDocumentAsync(documentId, UserId, IsSuperAdmin, ct)) return Forbid();
+        if (!await CanManageDocumentAsync(documentId, ct)) return Forbid();
         return Ok(await service.GetDocumentLinksAsync(documentId, ct));
     }
 
@@ -38,7 +37,7 @@ public sealed class ShareController(IShareService service, IAccessControlService
     {
         var documentId = await service.GetDocumentIdByLinkAsync(id, ct);
         if (!documentId.HasValue) return NotFound();
-        if (!await access.CanManageDocumentAsync(documentId.Value, UserId, IsSuperAdmin, ct)) return Forbid();
+        if (!await CanManageDocumentAsync(documentId.Value, ct)) return Forbid();
         return await service.DisableAsync(id, ct) ? NoContent() : NotFound();
     }
 
@@ -46,4 +45,9 @@ public sealed class ShareController(IShareService service, IAccessControlService
     [HttpGet("public/{token}")]
     public async Task<ActionResult<SharedDocumentDto>> Public(string token, CancellationToken ct)
         => await service.GetSharedDocumentAsync(token, ct) is { } doc ? Ok(doc) : NotFound();
+
+    private Task<bool> CanManageDocumentAsync(Guid documentId, CancellationToken ct)
+        => User.IsInRole("SUPER_ADMIN")
+            ? Task.FromResult(true)
+            : access.CanManageDocumentAsync(documentId, CurrentUserId, ct);
 }
