@@ -36,7 +36,7 @@ public sealed class DashboardService(KnowledgeDbContext db) : IDashboardService
             .Distinct()
             .LongCountAsync(ct);
 
-        // SQLite 不支持 DateTimeOffset ORDER BY，因此先完成权限过滤和投影，再在内存中按时间排序。
+        // SQLite 不支持 DateTimeOffset ORDER BY，因此先完成权限过滤和投影，再使用 List.Sort 在内存中按时间排序。
         var recentRows = await (
             from recent in db.DocumentRecentViews.AsNoTracking()
             join document in db.Documents.AsNoTracking() on recent.DocumentId equals document.Id
@@ -50,7 +50,8 @@ public sealed class DashboardService(KnowledgeDbContext db) : IDashboardService
                 recent.LastViewedAt,
                 recent.ViewCount))
             .ToListAsync(ct);
-        var recentDocuments = recentRows.OrderByDescending(x => x.LastViewedAt).Take(8).ToList();
+        recentRows.Sort((left, right) => right.LastViewedAt.CompareTo(left.LastViewedAt));
+        var recentDocuments = recentRows.Take(8).ToList();
 
         // 热门文档按累计访问次数排序，排序字段为 INTEGER，可安全交给 SQLite 执行。
         var popularDocuments = await (
