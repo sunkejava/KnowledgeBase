@@ -16,7 +16,6 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
     public DbSet<SysOrganization> Organizations => Set<SysOrganization>();
     public DbSet<SysMenu> Menus => Set<SysMenu>();
     public DbSet<SysRoleMenu> RoleMenus => Set<SysRoleMenu>();
-    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,8 +28,7 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
         modelBuilder.Entity<SysUserRole>(entity => { entity.ToTable("Sys_UserRole"); entity.HasKey(x => new { x.UserId, x.RoleId }); });
         modelBuilder.Entity<SysDepartment>(entity => { entity.ToTable("Sys_Department"); entity.HasKey(x => x.Id); entity.Property(x => x.Name).HasMaxLength(120).IsRequired(); });
         modelBuilder.Entity<SysOrganization>(entity => { entity.ToTable("Sys_Organization"); entity.HasKey(x => x.Id); entity.Property(x => x.Name).HasMaxLength(120).IsRequired(); entity.Property(x => x.Code).HasMaxLength(60).IsRequired(); entity.HasIndex(x => x.Code).IsUnique(); });
-        modelBuilder.Entity<SysMenu>(entity => { entity.ToTable("Sys_Menu"); entity.HasKey(x => x.Id); entity.Property(x => x.Name).HasMaxLength(80).IsRequired(); entity.Property(x => x.Path).HasMaxLength(200); entity.Property(x => x.Permission).HasMaxLength(120); entity.Property(x => x.Type).HasMaxLength(20); entity.Property(x => x.Icon).HasMaxLength(80); });
+        modelBuilder.Entity<SysMenu>(entity => { entity.ToTable("Sys_Menu"); entity.HasKey(x => x.Id); entity.Property(x => x.Name).HasMaxLength(80).IsRequired(); entity.Property(x => x.Path).HasMaxLength(200); entity.Property(x => x.Permission).HasMaxLength(120); });
         modelBuilder.Entity<SysRoleMenu>(entity => { entity.ToTable("Sys_RoleMenu"); entity.HasKey(x => new { x.RoleId, x.MenuId }); });
-        modelBuilder.Entity<AuditLog>(entity => { entity.ToTable("Sys_AuditLog"); entity.HasKey(x => x.Id); entity.Property(x => x.Category).HasMaxLength(40); entity.Property(x => x.Action).HasMaxLength(80); entity.Property(x => x.UserName).HasMaxLength(80); entity.Property(x => x.Target).HasMaxLength(200); entity.Property(x => x.IpAddress).HasMaxLength(64); entity.Property(x => x.Message).HasMaxLength(1000); entity.HasIndex(x => x.CreatedAt); });
     }
 }

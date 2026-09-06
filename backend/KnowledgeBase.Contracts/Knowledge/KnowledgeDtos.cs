@@ -1,0 +1,11 @@
+namespace KnowledgeBase.Contracts.Knowledge;
+
+public sealed record TagDto(Guid Id,string Name,string Color);
+public sealed record SaveTagRequest(string Name,string Color);
+public sealed record VersionDto(Guid Id,Guid DocumentId,int VersionNumber,string Title,string ChangeNote,DateTimeOffset CreatedAt);
+public sealed record VersionDetailDto(Guid Id,Guid DocumentId,int VersionNumber,string Title,string Slug,string Markdown,string ChangeNote,DateTimeOffset CreatedAt);
+public sealed record CreateVersionRequest(string ChangeNote);
+public sealed record AttachmentDto(Guid Id,Guid DocumentId,string FileName,string ContentType,long Size,string DownloadUrl,DateTimeOffset CreatedAt);
+public sealed record SearchResultDto(Guid DocumentId,Guid KnowledgeBaseId,string Title,string Snippet,DateTimeOffset UpdatedAt);
+public sealed record RecentDocumentDto(Guid DocumentId,string Title,DateTimeOffset LastViewedAt,int ViewCount);
+public sealed record FavoriteDocumentDto(Guid DocumentId,string Title,DateTimeOffset CreatedAt);

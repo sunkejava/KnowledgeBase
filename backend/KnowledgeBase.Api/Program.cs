@@ -1,5 +1,4 @@
 using System.Text;
-using KnowledgeBase.Api.Middleware;
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Infrastructure.Persistence;
 using KnowledgeBase.Infrastructure.Services;
@@ -8,54 +7,18 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddControllers();
-builder.Services.AddOpenApi();
-builder.Services.AddDbContext<KnowledgeDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=knowledgebase.db"));
-
+builder.Services.AddControllers(); builder.Services.AddOpenApi();
+builder.Services.AddDbContext<KnowledgeDbContext>(options => options.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=knowledgebase.db"));
 builder.Services.AddScoped<IAppearanceSettingsService, AppearanceSettingsService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IKnowledgeBaseService, KnowledgeBaseService>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
-builder.Services.AddScoped<ISystemManagementService, SystemManagementService>();
-
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key 未配置");
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options => options.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-        ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-        ClockSkew = TimeSpan.Zero
-    });
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => options.TokenValidationParameters = new TokenValidationParameters { ValidateIssuer = true, ValidateAudience = true, ValidateLifetime = true, ValidateIssuerSigningKey = true, ValidIssuer = builder.Configuration["Jwt:Issuer"], ValidAudience = builder.Configuration["Jwt:Audience"], IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)), ClockSkew = TimeSpan.Zero });
 builder.Services.AddAuthorization();
-builder.Services.AddCors(options => options.AddPolicy("frontend", policy =>
-    policy.AllowAnyHeader().AllowAnyMethod().SetIsOriginAllowed(_ => true).AllowCredentials()));
-
+builder.Services.AddCors(options => options.AddPolicy("frontend", policy => policy.AllowAnyHeader().AllowAnyMethod().SetIsOriginAllowed(_ => true).AllowCredentials()));
 var app = builder.Build();
-
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>();
-    await db.Database.EnsureCreatedAsync();
-    await scope.ServiceProvider.GetRequiredService<IAuthService>().EnsureDefaultAdminAsync(CancellationToken.None);
-}
-
-app.UseCors("frontend");
-app.UseAuthentication();
-app.UseAuthorization();
-app.UseMiddleware<AuditMiddleware>();
-app.MapOpenApi();
-app.MapControllers();
-app.MapGet("/api/health", () => Results.Ok(new
-{
-    status = "ok",
-    service = "KnowledgeBase.Api",
-    time = DateTimeOffset.UtcNow
-}));
+using (var scope = app.Services.CreateScope()) { var db = scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>(); await db.Database.EnsureCreatedAsync(); await scope.ServiceProvider.GetRequiredService<IAuthService>().EnsureDefaultAdminAsync(CancellationToken.None); }
+app.UseCors("frontend"); app.UseAuthentication(); app.UseAuthorization(); app.MapOpenApi(); app.MapControllers();
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok", service = "KnowledgeBase.Api", time = DateTimeOffset.UtcNow }));
 app.Run();

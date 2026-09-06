@@ -1,111 +1,181 @@
 # KnowledgeBase
 
-一套基于 **.NET 10 + Vue 3 + TypeScript** 构建的企业级知识库管理平台。产品强调专业、克制、工程化和长期可维护性，不把 AI 对话框作为视觉中心。
+一套基于 **.NET 10 + Vue 3 + TypeScript** 构建的企业级知识库管理平台。强调工程化、可维护性和长期扩展能力，界面采用克制、专业的科技风格，不把“AI 对话框”作为产品中心。
 
 ## 当前版本
 
-`v0.4.0`
+`v0.3.0`
 
-当前已经具备从登录、权限、知识库创建到文档编辑保存的完整基础链路，并进入可持续扩展的系统管理阶段。
+当前已具备：**JWT 登录、RBAC 基础模型、知识库 CRUD、文档目录树、Markdown 文档编辑保存、系统管理基础查询、主题/语言/水印/字号配置**。
 
 ## 技术栈
 
-- 后端：.NET 10 / ASP.NET Core Web API / DDD + Clean Architecture / EF Core 10 / SQLite / JWT
-- 前端：Vue 3 / TypeScript / Vite / Pinia / Vue Router / Axios / Element Plus
+### 后端
+- .NET 10 / ASP.NET Core Web API
+- DDD + Clean Architecture
+- EF Core 10 + SQLite
+- JWT Bearer Authentication
+- PBKDF2-SHA256 密码哈希
+- OpenAPI
+
+### 前端
+- Vue 3 + TypeScript + Vite
+- Pinia + Vue Router + Axios
+- Element Plus + Lucide Icons
 
 ## 已实现
 
-### 身份认证与权限
-- JWT 登录、Bearer Token 自动注入、401 自动退出
-- PBKDF2-SHA256 密码哈希
-- 用户 CRUD、启停用、重置密码
-- 角色 CRUD、用户角色分配
-- 菜单与权限标识模型
-- 角色菜单授权
-- 当前用户权限画像接口 `/api/system/profile`
-- 前端 `permission` Store，可用于菜单/按钮权限控制
-- 默认超级管理员不可删除
+### 身份认证 / RBAC
+- JWT 登录
+- Bearer Token 自动注入
+- 401 自动退出
+- 用户、角色、用户角色、菜单、角色菜单领域模型
+- 部门、组织机构模型
+- 超级管理员保护的系统查询接口
+- 首次启动初始化管理员
 
-默认开发账号：`admin / Admin123!`。生产部署必须修改默认密码与 `Jwt:Key`。
+开发环境默认账号：
 
-### 组织管理
-- 部门树数据 CRUD
-- 组织机构树数据 CRUD
-- 排序与启停状态
-- 菜单管理模型支持目录、菜单、按钮三类权限节点
+```text
+admin / Admin123!
+```
+
+生产部署后必须修改默认密码，并替换 `Jwt:Key`。
 
 ### 知识库与文档
-- 知识库 CRUD
+- 知识库列表、创建、编辑、删除
 - 知识库工作区
-- 文档目录树、父子层级
-- Markdown 新建、编辑、保存、删除
-- `Kb_Document` / `Kb_DocumentContent` 分表
-- 目录列表不加载 Markdown 正文，打开文档时才按需加载
+- 文档目录树
+- 父子文档层级
+- 新建根文档 / 子文档
+- Markdown 编辑
+- Markdown 正文真实持久化
+- 编辑保存 / 删除
+- `Kb_Document` 与 `Kb_DocumentContent` 分表
+- 目录请求不返回 Markdown 正文，只有打开具体文档时才加载正文，避免文档数量增加后页面越来越慢
 
-### 审计与安全
-- `Sys_AuditLog` 审计日志领域模型
-- 审计日志查询接口
-- 登录日志/操作日志统一按 Category + Action 设计，可继续通过中间件和业务拦截器补齐自动写入
-- 修改密码接口
+### 系统管理
+当前已有真实查询：用户、角色、部门、组织机构、菜单。下一阶段继续补完整 CRUD、树形编辑、用户角色分配、角色菜单授权、动态路由与按钮级权限。
 
 ### 界面个性化
 - 深色 / 浅色 / 跟随系统
 - 简体中文 / English 基础切换
-- 字号 12~18px
-- 水印、自定义水印内容
+- 全局字号 12~18px
+- 自定义水印
 - 紧凑模式
-- 配置即时生效并本地持久化
+- localStorage 即时恢复
+- 后端用户界面偏好接口
+
+## 工程结构
+
+```text
+KnowledgeBase
+├─ backend
+│  ├─ KnowledgeBase.Api
+│  ├─ KnowledgeBase.Application
+│  ├─ KnowledgeBase.Contracts
+│  ├─ KnowledgeBase.Domain
+│  └─ KnowledgeBase.Infrastructure
+├─ frontend
+├─ docs
+├─ docker-compose.yml
+└─ KnowledgeBase.slnx
+```
 
 ## 启动
 
-后端：
+### 后端
 ```bash
-cd backend/KnowledgeBase.Api
+cd backend
 dotnet restore
-dotnet run
+dotnet run --project KnowledgeBase.Api/KnowledgeBase.Api.csproj
 ```
 
-前端：
+### 前端
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-默认 SQLite 数据库为 `knowledgebase.db`。当前开发阶段仍使用 `EnsureCreatedAsync`；若从早期版本升级且缺少新表，可删除开发数据库后重新启动。正式版本将切换为 EF Core Migration，避免删库升级。
+前端默认 API：`http://localhost:5000/api`，可通过 `VITE_API_BASE_URL` 调整。
 
-## 主要 API
+> 当前开发阶段使用 `EnsureCreatedAsync` 初始化新数据库。若你已经运行过旧版并生成了 `knowledgebase.db`，由于本阶段新增了 RBAC 和文档正文表，建议删除旧开发数据库后重新启动。正式版本将切换 EF Core Migration 管理升级，不要求生产删除数据库。
 
-- `POST /api/auth/login`
-- `GET /api/system/profile`
-- `GET|POST|PUT|DELETE /api/system/users`
-- `GET|POST|PUT|DELETE /api/system/roles`
-- `GET|POST|PUT|DELETE /api/system/departments`
-- `GET|POST|PUT|DELETE /api/system/organizations`
-- `GET|POST|PUT|DELETE /api/system/menus`
-- `POST /api/system/change-password`
-- `GET /api/system/audit-logs`
-- `GET|POST|PUT|DELETE /api/knowledge-bases`
-- `GET|POST|PUT|DELETE /api/documents`
-- `GET|PUT /api/settings/appearance`
+## API
+
+```text
+POST   /api/auth/login
+GET    /api/knowledge-bases
+GET    /api/knowledge-bases/{id}
+POST   /api/knowledge-bases
+PUT    /api/knowledge-bases/{id}
+DELETE /api/knowledge-bases/{id}
+
+GET    /api/documents?knowledgeBaseId={id}
+GET    /api/documents/{id}
+POST   /api/documents
+PUT    /api/documents/{id}
+DELETE /api/documents/{id}
+
+GET    /api/system/users
+GET    /api/system/roles
+GET    /api/system/departments
+GET    /api/system/organizations
+GET    /api/system/menus
+
+GET    /api/settings/appearance
+PUT    /api/settings/appearance
+```
 
 ## 架构原则
+- Controller 不承载复杂业务逻辑
+- Application 定义用例契约
+- Domain 维护领域状态规则
+- Infrastructure 实现 EF Core、认证等技术能力
+- 列表 DTO 不携带正文大字段
+- 文件、全文搜索、向量检索和模型能力后续全部通过抽象接口接入
 
-1. Controller 不直接操作 EF Core DbContext。
-2. 文档目录与正文分离，杜绝工作区一次加载全部正文。
-3. 权限从系统级向知识库、空间、文档级逐层扩展。
-4. 文件存储、搜索、Embedding、LLM 保持抽象，可独立替换。
-5. 前端配置、表格、树和操作都连接真实 API，不做假页面。
-6. 所有关键管理与知识资产操作逐步纳入审计。
+## 开发路线
 
-## 下一阶段
+### 阶段 1：基础平台（进行中）
+- [x] 工程架构
+- [x] 主题 / 明暗 / 语言 / 水印 / 字号
+- [x] JWT 登录
+- [x] RBAC 基础模型
+- [x] 用户/角色/部门/组织/菜单基础查询
+- [x] 知识库 CRUD
+- [x] 文档目录树
+- [x] Markdown 文档创建、编辑、保存、删除
+- [ ] 用户管理完整 CRUD
+- [ ] 角色及菜单授权
+- [ ] 部门、组织机构树形维护
+- [ ] 菜单动态路由与按钮权限
+- [ ] 标签、收藏、最近访问
+- [ ] 登录日志、操作审计日志
+- [ ] EF Core Migration 正式升级体系
 
-- EF Core Migration 正式数据库升级体系
-- 系统管理页完善部门/组织/菜单树形编辑
-- 动态路由真正按角色菜单生成
-- 按钮级 `v-permission` 指令
-- 登录日志与操作日志自动拦截记录
-- 标签、收藏、最近访问、附件
-- 文档版本、Diff、回滚
-- 全文检索 / Meilisearch
-- API Key、Webhook、开放 API
+### 阶段 2：专业知识管理
+- 文档版本与 Diff
+- 文档级权限
+- 评论与附件
+- Word/PDF/Markdown 导入
+- 全文搜索
+
+### 阶段 3：平台化
+- API Key / Webhook / Open API
+- Redis
+- Meilisearch / OpenSearch
+- S3 / MinIO 对象存储
+- Docker 完整部署
+
+### 阶段 4：智能知识能力
+智能能力保持可插拔：Chunk、Embedding、Vector DB、Rerank、RAG、语义检索、知识问答、知识关系图谱。
+
+## 安全建议
+1. 修改默认管理员密码。
+2. 使用环境变量或安全配置中心注入 JWT Key。
+3. 限制 CORS 来源并启用 HTTPS。
+4. 增加登录失败限流/锁定。
+5. 增加登录日志和操作审计。
+6. 正式数据库切换 EF Core Migration。
