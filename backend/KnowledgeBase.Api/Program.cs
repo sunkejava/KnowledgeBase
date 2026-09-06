@@ -1,4 +1,5 @@
 using System.Text;
+using KnowledgeBase.Api.Middleware;
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Infrastructure.Persistence;
 using KnowledgeBase.Infrastructure.Services;
@@ -48,6 +49,7 @@ using (var scope = app.Services.CreateScope())
 app.UseCors("frontend");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<AuditMiddleware>();
 app.MapOpenApi();
 app.MapControllers();
 app.MapGet("/api/health", () => Results.Ok(new
