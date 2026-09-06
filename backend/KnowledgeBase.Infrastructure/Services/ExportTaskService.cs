@@ -10,12 +10,10 @@ using Microsoft.EntityFrameworkCore;
 namespace KnowledgeBase.Infrastructure.Services;
 
 /// <summary>
-/// 知识库服务端导出任务实现。导出文件统一写入 storage/exports。
+/// 知识库服务端导出任务实现。导出结果通过 IFileStorage 统一保存，不直接依赖物理磁盘路径。
 /// </summary>
-public sealed class ExportTaskService(KnowledgeDbContext db) : IExportTaskService
+public sealed class ExportTaskService(KnowledgeDbContext db, IFileStorage storage) : IExportTaskService
 {
-    private static readonly string Root = Path.Combine(AppContext.BaseDirectory, "storage", "exports");
-
     public async Task<ExportTaskDto> CreateAsync(Guid userId, Guid knowledgeBaseId, string format, CancellationToken ct)
     {
         var name = await db.KnowledgeBases.AsNoTracking().Where(x => x.Id == knowledgeBaseId).Select(x => x.Name).FirstAsync(ct);
@@ -42,11 +40,13 @@ public sealed class ExportTaskService(KnowledgeDbContext db) : IExportTaskServic
         return new(items, total, page, pageSize);
     }
 
-    public async Task<(string Path, string FileName)?> GetFileAsync(Guid taskId, Guid userId, bool isSuperAdmin, CancellationToken ct)
+    /// <summary>打开已完成导出任务的文件流。</summary>
+    public async Task<(Stream Stream, string FileName)?> OpenFileAsync(Guid taskId, Guid userId, bool isSuperAdmin, CancellationToken ct)
     {
         var row = await db.ExportTasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == taskId && (isSuperAdmin || x.UserId == userId), ct);
         if (row is null || row.Status != "Completed" || string.IsNullOrWhiteSpace(row.RelativePath) || string.IsNullOrWhiteSpace(row.FileName)) return null;
-        return (Path.Combine(AppContext.BaseDirectory, row.RelativePath), row.FileName);
+        var stream = await storage.OpenReadAsync(NormalizeLegacyKey(row.RelativePath), ct);
+        return stream is null ? null : (stream, row.FileName);
     }
 
     /// <summary>取消尚未开始的导出任务。</summary>
@@ -78,10 +78,7 @@ public sealed class ExportTaskService(KnowledgeDbContext db) : IExportTaskServic
         foreach (var row in rows)
         {
             if (!string.IsNullOrWhiteSpace(row.RelativePath))
-            {
-                var full = Path.Combine(AppContext.BaseDirectory, row.RelativePath);
-                if (File.Exists(full)) File.Delete(full);
-            }
+                await storage.DeleteAsync(NormalizeLegacyKey(row.RelativePath), ct);
         }
         db.ExportTasks.RemoveRange(rows);
         await db.SaveChangesAsync(ct);
@@ -97,7 +94,6 @@ public sealed class ExportTaskService(KnowledgeDbContext db) : IExportTaskServic
         await db.SaveChangesAsync(ct);
         try
         {
-            Directory.CreateDirectory(Root);
             var kbName = await db.KnowledgeBases.AsNoTracking().Where(x => x.Id == task.KnowledgeBaseId).Select(x => x.Name).FirstOrDefaultAsync(ct) ?? "knowledge-base";
             var rows = await (
                 from d in db.Documents.AsNoTracking()
@@ -108,10 +104,9 @@ public sealed class ExportTaskService(KnowledgeDbContext db) : IExportTaskServic
 
             var map = rows.ToDictionary(x => x.Id);
             var fileName = $"{Sanitize(kbName)}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.zip";
-            var stored = $"{task.Id:N}.zip";
-            var full = Path.Combine(Root, stored);
+            var objectKey = $"exports/{task.Id:N}.zip";
 
-            await using var stream = File.Create(full);
+            await using var stream = await storage.CreateWriteAsync(objectKey, ct);
             using var archive = new ZipArchive(stream, ZipArchiveMode.Create, false, Encoding.UTF8);
             foreach (var row in rows.OrderBy(x => BuildEntryPath(x.Id, map), StringComparer.OrdinalIgnoreCase))
             {
@@ -122,7 +117,7 @@ public sealed class ExportTaskService(KnowledgeDbContext db) : IExportTaskServic
                 await writer.WriteAsync(row.Markdown.AsMemory(), ct);
             }
 
-            task.Complete(fileName, Path.Combine("storage", "exports", stored));
+            task.Complete(fileName, objectKey);
         }
         catch (Exception ex)
         {
@@ -134,6 +129,14 @@ public sealed class ExportTaskService(KnowledgeDbContext db) : IExportTaskServic
 
     private Task<ExportTask?> FindOwnedAsync(Guid taskId, Guid userId, bool isSuperAdmin, CancellationToken ct)
         => db.ExportTasks.FirstOrDefaultAsync(x => x.Id == taskId && (isSuperAdmin || x.UserId == userId), ct);
+
+    private static string NormalizeLegacyKey(string path)
+    {
+        var normalized = path.Replace('\\', '/').TrimStart('/');
+        return normalized.StartsWith("storage/", StringComparison.OrdinalIgnoreCase)
+            ? normalized["storage/".Length..]
+            : normalized;
+    }
 
     private static string BuildEntryPath(Guid id, IReadOnlyDictionary<Guid, ExportRow> map)
     {
