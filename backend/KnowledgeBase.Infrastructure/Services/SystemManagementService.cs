@@ -3,6 +3,7 @@ using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Contracts.Common;
 using KnowledgeBase.Contracts.System;
 using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Infrastructure.Common;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -271,11 +272,12 @@ public sealed class SystemManagementService(KnowledgeDbContext db) : ISystemMana
         return true;
     }
 
-    /// <summary>分页查询审计日志，支持按类别、动作、用户、目标、IP 和说明关键字模糊筛选。</summary>
-    public async Task<PageResult<AuditLogDto>> GetAuditLogsAsync(PageQuery query, string? keyword, CancellationToken ct)
+    /// <summary>
+    /// 分页查询审计日志，支持按类别、动作、用户、目标、IP 和说明关键字模糊筛选。
+    /// SQLite 下 CreatedAt 排序统一使用安全分页扩展，禁止直接对 DateTimeOffset 执行 ORDER BY。
+    /// </summary>
+    public Task<PageResult<AuditLogDto>> GetAuditLogsAsync(PageQuery query, string? keyword, CancellationToken ct)
     {
-        var page = query.NormalizedPage;
-        var pageSize = query.NormalizedPageSize;
         var source = db.AuditLogs.AsNoTracking().AsQueryable();
         var normalizedKeyword = (keyword ?? query.Keyword)?.Trim();
 
@@ -290,14 +292,14 @@ public sealed class SystemManagementService(KnowledgeDbContext db) : ISystemMana
                 (x.Message != null && x.Message.Contains(normalizedKeyword)));
         }
 
-        var total = await source.LongCountAsync(ct);
-        var items = await source.OrderByDescending(x => x.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        return source
             .Select(x => new AuditLogDto(x.Id, x.Category, x.Action, x.UserName, x.Target, x.IpAddress, x.Success, x.Message, x.CreatedAt))
-            .ToListAsync(ct);
-
-        return new PageResult<AuditLogDto>(items, total, page, pageSize);
+            .ToSqliteSafeDateTimeOffsetPageAsync(
+                x => x.CreatedAt,
+                descending: true,
+                query.NormalizedPage,
+                query.NormalizedPageSize,
+                ct);
     }
 
     /// <summary>构建单个用户 DTO，避免保存后重新读取全部用户列表。</summary>
