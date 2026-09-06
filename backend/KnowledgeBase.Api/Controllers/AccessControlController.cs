@@ -15,6 +15,18 @@ namespace KnowledgeBase.Api.Controllers;
 [Route("api/access")]
 public sealed class AccessControlController(IAccessControlService service) : ControllerBase
 {
+    /// <summary>查询权限面板可选择的用户，仅返回最小必要账号信息。</summary>
+    [HttpGet("knowledge-bases/{knowledgeBaseId:guid}/users")]
+    public async Task<ActionResult<IReadOnlyList<PermissionUserLookupDto>>> Users(
+        Guid knowledgeBaseId,
+        [FromQuery] string? keyword,
+        [FromQuery] int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await CanManageKnowledgeBaseAsync(knowledgeBaseId, cancellationToken)) return Forbid();
+        return Ok(await service.SearchUsersAsync(keyword, take, cancellationToken));
+    }
+
     /// <summary>获取指定知识库的成员权限列表。</summary>
     [HttpGet("knowledge-bases/{knowledgeBaseId:guid}/members")]
     public async Task<ActionResult<IReadOnlyList<KnowledgeBaseMemberDto>>> Members(Guid knowledgeBaseId, CancellationToken cancellationToken)
@@ -25,10 +37,7 @@ public sealed class AccessControlController(IAccessControlService service) : Con
 
     /// <summary>新增或更新指定知识库的成员权限。</summary>
     [HttpPut("knowledge-bases/{knowledgeBaseId:guid}/members")]
-    public async Task<ActionResult<KnowledgeBaseMemberDto>> SetMember(
-        Guid knowledgeBaseId,
-        SetKnowledgeBaseMemberRequest request,
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<KnowledgeBaseMemberDto>> SetMember(Guid knowledgeBaseId, SetKnowledgeBaseMemberRequest request, CancellationToken cancellationToken)
     {
         if (!await CanManageKnowledgeBaseAsync(knowledgeBaseId, cancellationToken)) return Forbid();
         return Ok(await service.SetKnowledgeBaseMemberAsync(knowledgeBaseId, request, cancellationToken));
@@ -52,10 +61,7 @@ public sealed class AccessControlController(IAccessControlService service) : Con
 
     /// <summary>新增或更新指定文档的用户权限。</summary>
     [HttpPut("documents/{documentId:guid}/permissions")]
-    public async Task<ActionResult<DocumentPermissionDto>> SetDocumentPermission(
-        Guid documentId,
-        SetDocumentPermissionRequest request,
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<DocumentPermissionDto>> SetDocumentPermission(Guid documentId, SetDocumentPermissionRequest request, CancellationToken cancellationToken)
     {
         if (!await CanManageDocumentAsync(documentId, cancellationToken)) return Forbid();
         return Ok(await service.SetDocumentPermissionAsync(documentId, request, cancellationToken));
@@ -72,12 +78,8 @@ public sealed class AccessControlController(IAccessControlService service) : Con
     private Guid CurrentUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     private Task<bool> CanManageKnowledgeBaseAsync(Guid knowledgeBaseId, CancellationToken ct)
-        => User.IsInRole("SUPER_ADMIN")
-            ? Task.FromResult(true)
-            : service.CanManageKnowledgeBaseAsync(knowledgeBaseId, CurrentUserId, ct);
+        => User.IsInRole("SUPER_ADMIN") ? Task.FromResult(true) : service.CanManageKnowledgeBaseAsync(knowledgeBaseId, CurrentUserId, ct);
 
     private Task<bool> CanManageDocumentAsync(Guid documentId, CancellationToken ct)
-        => User.IsInRole("SUPER_ADMIN")
-            ? Task.FromResult(true)
-            : service.CanManageDocumentAsync(documentId, CurrentUserId, ct);
+        => User.IsInRole("SUPER_ADMIN") ? Task.FromResult(true) : service.CanManageDocumentAsync(documentId, CurrentUserId, ct);
 }
