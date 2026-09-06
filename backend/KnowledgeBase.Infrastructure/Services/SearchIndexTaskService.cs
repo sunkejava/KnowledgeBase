@@ -49,14 +49,18 @@ public sealed class SearchIndexTaskService(
         return true;
     }
 
-    /// <summary>清理指定天数之前已完成或失败的任务历史。</summary>
+    /// <summary>
+    /// 清理指定天数之前已完成或失败的任务历史。
+    /// SQLite 不直接对 DateTimeOffset 执行范围比较，因此先按状态过滤，再在内存判断时间阈值。
+    /// </summary>
     public async Task<int> CleanupAsync(int retentionDays, CancellationToken ct)
     {
         retentionDays = Math.Clamp(retentionDays, 1, 3650);
         var threshold = DateTimeOffset.UtcNow.AddDays(-retentionDays);
-        var rows = await db.SearchIndexTasks
-            .Where(x => (x.Status == "Completed" || x.Status == "Failed") && x.CreatedAt < threshold)
+        var candidates = await db.SearchIndexTasks
+            .Where(x => x.Status == "Completed" || x.Status == "Failed")
             .ToListAsync(ct);
+        var rows = candidates.Where(x => x.CreatedAt < threshold).ToList();
         if (rows.Count == 0) return 0;
         db.SearchIndexTasks.RemoveRange(rows);
         await db.SaveChangesAsync(ct);
