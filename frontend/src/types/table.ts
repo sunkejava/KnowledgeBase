@@ -17,6 +17,7 @@ export interface TableColumn<T = Record<string, unknown>> {
 export interface TableColumnPreference {
   visible: boolean
   width?: number
+  order?: number
 }
 
 export interface PageResult<T> {
@@ -24,4 +25,10 @@ export interface PageResult<T> {
   total: number
   page: number
   pageSize: number
+}
+
+export interface PageRequest {
+  page: number
+  pageSize: number
+  keyword?: string
 }
