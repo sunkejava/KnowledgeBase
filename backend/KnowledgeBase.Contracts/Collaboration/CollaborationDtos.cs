@@ -8,6 +8,9 @@ public sealed record CreateCommentRequest(string Content, Guid? ParentId, IReadO
 /// <summary>修改评论请求。</summary>
 public sealed record UpdateCommentRequest(string Content, IReadOnlyList<Guid>? MentionUserIds);
 
+/// <summary>评论 @成员候选用户 DTO。</summary>
+public sealed record MentionUserDto(Guid Id, string UserName, string DisplayName);
+
 /// <summary>文档评论 DTO。</summary>
 public sealed record DocumentCommentDto(
     Guid Id,
