@@ -15,16 +15,42 @@ namespace KnowledgeBase.Infrastructure.Services;
 /// <summary>JWT 身份认证服务，密码使用 PBKDF2-SHA256 保存。</summary>
 public sealed class AuthService(KnowledgeDbContext dbContext, IConfiguration configuration) : IAuthService
 {
+    /// <summary>
+    /// 确保默认管理员、超级管理员角色及全部菜单授权存在。
+    /// 该方法必须可重复执行，既兼容全新数据库，也兼容历史数据库升级。
+    /// </summary>
     public async Task EnsureDefaultAdminAsync(CancellationToken cancellationToken)
     {
-        if (await dbContext.Users.AnyAsync(cancellationToken)) return;
+        var role = await dbContext.Roles.FirstOrDefaultAsync(x => x.Code == "SUPER_ADMIN", cancellationToken);
+        if (role is null)
+        {
+            role = new SysRole("SUPER_ADMIN", "超级管理员");
+            dbContext.Roles.Add(role);
+        }
 
-        var (hash, salt) = HashPassword("Admin123!");
-        var user = new SysUser("admin", "系统管理员", hash, salt);
-        var role = new SysRole("SUPER_ADMIN", "超级管理员");
-        dbContext.Users.Add(user);
-        dbContext.Roles.Add(role);
-        dbContext.UserRoles.Add(new SysUserRole(user.Id, role.Id));
+        var user = await dbContext.Users.FirstOrDefaultAsync(x => x.UserName == "admin", cancellationToken);
+        if (user is null)
+        {
+            var (hash, salt) = HashPassword("Admin123!");
+            user = new SysUser("admin", "系统管理员", hash, salt);
+            dbContext.Users.Add(user);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (!await dbContext.UserRoles.AnyAsync(x => x.UserId == user.Id && x.RoleId == role.Id, cancellationToken))
+            dbContext.UserRoles.Add(new SysUserRole(user.Id, role.Id));
+
+        // Migration 先于默认管理员初始化执行，因此在这里统一补齐 SUPER_ADMIN 的全部菜单关系。
+        var menuIds = await dbContext.Menus.AsNoTracking().Select(x => x.Id).ToListAsync(cancellationToken);
+        var grantedMenuIds = await dbContext.RoleMenus.AsNoTracking()
+            .Where(x => x.RoleId == role.Id)
+            .Select(x => x.MenuId)
+            .ToListAsync(cancellationToken);
+        var grantedSet = grantedMenuIds.ToHashSet();
+        foreach (var menuId in menuIds.Where(x => !grantedSet.Contains(x)))
+            dbContext.RoleMenus.Add(new SysRoleMenu(role.Id, menuId));
+
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
