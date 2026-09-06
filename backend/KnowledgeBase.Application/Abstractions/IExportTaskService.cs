@@ -10,7 +10,7 @@ public interface IExportTaskService
 {
     Task<ExportTaskDto> CreateAsync(Guid userId, Guid knowledgeBaseId, string format, CancellationToken ct);
     Task<PageResult<ExportTaskDto>> GetPageAsync(Guid userId, int page, int pageSize, CancellationToken ct);
-    Task<(string Path, string FileName)?> GetFileAsync(Guid taskId, Guid userId, bool isSuperAdmin, CancellationToken ct);
+    Task<(Stream Stream, string FileName)?> OpenFileAsync(Guid taskId, Guid userId, bool isSuperAdmin, CancellationToken ct);
     Task<bool> CancelAsync(Guid taskId, Guid userId, bool isSuperAdmin, CancellationToken ct);
     Task<bool> RetryAsync(Guid taskId, Guid userId, bool isSuperAdmin, CancellationToken ct);
     Task<int> CleanupAsync(Guid userId, bool isSuperAdmin, int olderThanDays, CancellationToken ct);
