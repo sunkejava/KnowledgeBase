@@ -21,6 +21,8 @@ builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<ISystemManagementService, SystemManagementService>();
 builder.Services.AddScoped<IKnowledgeAssetService, KnowledgeAssetService>();
 builder.Services.AddScoped<IAttachmentService, AttachmentService>();
+builder.Services.AddScoped<IContentExchangeService, ContentExchangeService>();
+builder.Services.AddScoped<IShareService, ShareService>();
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key 未配置");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -44,7 +46,8 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>();
-    await db.Database.EnsureCreatedAsync();
+    // v0.6 起正式由 EF Core Migration 管理数据库升级。基线迁移兼容历史 EnsureCreated 数据库。
+    await db.Database.MigrateAsync();
     await scope.ServiceProvider.GetRequiredService<IAuthService>().EnsureDefaultAdminAsync(CancellationToken.None);
 }
 
