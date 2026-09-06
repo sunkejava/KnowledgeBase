@@ -20,8 +20,16 @@ builder.Services.AddHttpClient("meilisearch", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
-// 文件存储统一通过 IFileStorage 抽象访问。当前默认 Local，后续可增加 MinIO/S3/OSS/COS 实现。
-builder.Services.AddSingleton<IFileStorage, LocalFileStorage>();
+// 文件存储统一通过 IFileStorage 抽象访问。当前实现 Local；新增 MinIO/S3/OSS/COS 时只扩展此选择器。
+builder.Services.AddSingleton<IFileStorage>(sp =>
+{
+    var provider = (builder.Configuration["Storage:Provider"] ?? "local").Trim().ToLowerInvariant();
+    return provider switch
+    {
+        "local" => ActivatorUtilities.CreateInstance<LocalFileStorage>(sp),
+        _ => throw new InvalidOperationException($"不支持的文件存储提供方：{provider}")
+    };
+});
 
 builder.Services.AddScoped<IAppearanceSettingsService, AppearanceSettingsService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
