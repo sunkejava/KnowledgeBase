@@ -8,25 +8,24 @@ using Microsoft.EntityFrameworkCore;
 namespace KnowledgeBase.Infrastructure.Services;
 
 /// <summary>
-/// 知识库异步导入任务服务。上传文件统一写入 storage/imports，再由后台 Worker 顺序处理。
+/// 知识库异步导入任务服务。上传源文件通过 IFileStorage 统一保存，再由后台 Worker 顺序处理。
 /// </summary>
-public sealed class ImportTaskService(KnowledgeDbContext db, IContentExchangeService contentExchange) : IImportTaskService
+public sealed class ImportTaskService(
+    KnowledgeDbContext db,
+    IContentExchangeService contentExchange,
+    IFileStorage storage) : IImportTaskService
 {
-    private static readonly string Root = Path.Combine(AppContext.BaseDirectory, "storage", "imports");
-
     /// <summary>创建 Markdown ZIP 异步导入任务。</summary>
     public async Task<ImportTaskDto> CreateZipAsync(Guid userId, Guid knowledgeBaseId, string fileName, Stream stream, CancellationToken ct)
     {
-        Directory.CreateDirectory(Root);
         var taskId = Guid.NewGuid();
-        var stored = $"{taskId:N}.zip";
-        var full = Path.Combine(Root, stored);
-        await using (var output = File.Create(full))
+        var objectKey = $"imports/{taskId:N}.zip";
+        await using (var output = await storage.CreateWriteAsync(objectKey, ct))
         {
             await stream.CopyToAsync(output, ct);
         }
 
-        var entity = new ImportTask(userId, knowledgeBaseId, fileName, Path.Combine("storage", "imports", stored));
+        var entity = new ImportTask(userId, knowledgeBaseId, fileName, objectKey);
         db.ImportTasks.Add(entity);
         await db.SaveChangesAsync(ct);
         return Map(entity);
@@ -63,7 +62,7 @@ public sealed class ImportTaskService(KnowledgeDbContext db, IContentExchangeSer
     {
         var task = await FindOwnedAsync(taskId, userId, isSuperAdmin, ct);
         if (task is null || !task.Retry()) return false;
-        if (!File.Exists(Path.Combine(AppContext.BaseDirectory, task.RelativePath)))
+        if (!await storage.ExistsAsync(NormalizeLegacyKey(task.RelativePath), ct))
         {
             task.Fail("原始导入文件已不存在，无法重试。");
             await db.SaveChangesAsync(ct);
@@ -82,10 +81,7 @@ public sealed class ImportTaskService(KnowledgeDbContext db, IContentExchangeSer
         if (!isSuperAdmin) query = query.Where(x => x.UserId == userId);
         var rows = await query.ToListAsync(ct);
         foreach (var row in rows)
-        {
-            var full = Path.Combine(AppContext.BaseDirectory, row.RelativePath);
-            if (File.Exists(full)) File.Delete(full);
-        }
+            await storage.DeleteAsync(NormalizeLegacyKey(row.RelativePath), ct);
         db.ImportTasks.RemoveRange(rows);
         await db.SaveChangesAsync(ct);
         return rows.Count;
@@ -101,10 +97,9 @@ public sealed class ImportTaskService(KnowledgeDbContext db, IContentExchangeSer
         await db.SaveChangesAsync(ct);
         try
         {
-            var full = Path.Combine(AppContext.BaseDirectory, task.RelativePath);
-            if (!File.Exists(full)) throw new FileNotFoundException("导入源文件不存在。", full);
+            await using var stream = await storage.OpenReadAsync(NormalizeLegacyKey(task.RelativePath), ct)
+                ?? throw new FileNotFoundException("导入源文件不存在。");
 
-            await using var stream = File.OpenRead(full);
             var result = await contentExchange.ImportMarkdownZipAsync(
                 task.KnowledgeBaseId,
                 stream,
@@ -127,6 +122,14 @@ public sealed class ImportTaskService(KnowledgeDbContext db, IContentExchangeSer
 
     private Task<ImportTask?> FindOwnedAsync(Guid taskId, Guid userId, bool isSuperAdmin, CancellationToken ct)
         => db.ImportTasks.FirstOrDefaultAsync(x => x.Id == taskId && (isSuperAdmin || x.UserId == userId), ct);
+
+    private static string NormalizeLegacyKey(string path)
+    {
+        var normalized = path.Replace('\\', '/').TrimStart('/');
+        return normalized.StartsWith("storage/", StringComparison.OrdinalIgnoreCase)
+            ? normalized["storage/".Length..]
+            : normalized;
+    }
 
     private static ImportTaskDto Map(ImportTask x)
         => new(
