@@ -83,6 +83,9 @@ async function remove(item: Item) {
 function open(item: Item) {
   router.push(`/knowledge-bases/${item.id}`)
 }
+function openAccess(item: Item) {
+  router.push(`/knowledge-bases/${item.id}/access`)
+}
 
 onMounted(load)
 </script>
@@ -99,7 +102,7 @@ onMounted(load)
       :loading="loading"
       storage-key="knowledge-bases"
       export-file-name="KnowledgeBase-知识库列表"
-      :action-width="210"
+      :action-width="270"
       server-paging
       :total-count="total"
       @refresh="load"
@@ -112,6 +115,7 @@ onMounted(load)
       </template>
       <template #actions="{ row }">
         <el-button link type="primary" @click="open(row)">进入</el-button>
+        <el-button link type="primary" @click="openAccess(row)">权限</el-button>
         <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
         <el-button link type="danger" @click="remove(row)">删除</el-button>
       </template>
