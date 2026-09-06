@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Contracts.Knowledge;
 using KnowledgeBase.Infrastructure.Persistence;
@@ -9,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KnowledgeBase.Infrastructure.Services;
 
-/// <summary>Markdown、HTML、ZIP 导入导出与版本 Diff 服务。</summary>
+/// <summary>Markdown、HTML、DOCX、ZIP 导入导出与版本 Diff 服务。</summary>
 public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentService documents) : IContentExchangeService
 {
     /// <summary>导出单篇 Markdown 文档。</summary>
@@ -50,6 +51,27 @@ public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentServi
         string html,
         CancellationToken ct)
         => ImportMarkdownAsync(knowledgeBaseId, parentId, fileName, HtmlToMarkdown(html), ct);
+
+    /// <summary>
+    /// 导入 DOCX。直接读取 Office Open XML 包中的 word/document.xml，避免引入重量级 Office 运行时依赖。
+    /// 当前保留普通段落、Heading1~Heading6 标题层级和基础换行。
+    /// </summary>
+    public async Task<ImportMarkdownResultDto> ImportDocxAsync(
+        Guid knowledgeBaseId,
+        Guid? parentId,
+        string fileName,
+        Stream docxStream,
+        CancellationToken ct)
+    {
+        using var archive = new ZipArchive(docxStream, ZipArchiveMode.Read, true, Encoding.UTF8);
+        var entry = archive.GetEntry("word/document.xml")
+            ?? throw new InvalidDataException("DOCX 中缺少 word/document.xml，文件可能已损坏或不是有效 DOCX。");
+
+        await using var documentStream = entry.Open();
+        var xml = await XDocument.LoadAsync(documentStream, LoadOptions.None, ct);
+        var markdown = ConvertDocxXmlToMarkdown(xml);
+        return await ImportMarkdownAsync(knowledgeBaseId, parentId, fileName, markdown, ct);
+    }
 
     /// <summary>
     /// 导入 Markdown ZIP，并根据目录路径恢复文档父子关系。
@@ -121,6 +143,43 @@ public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentServi
             .FirstOrDefaultAsync(ct) ?? string.Empty;
 
         return new(version.DocumentId, version.VersionNumber, BuildDiff(version.Markdown, current));
+    }
+
+    private static string ConvertDocxXmlToMarkdown(XDocument xml)
+    {
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        var builder = new StringBuilder();
+
+        foreach (var paragraph in xml.Descendants(w + "p"))
+        {
+            var style = paragraph
+                .Element(w + "pPr")?
+                .Element(w + "pStyle")?
+                .Attribute(w + "val")?
+                .Value ?? string.Empty;
+
+            var text = string.Concat(paragraph.Descendants(w + "t").Select(x => x.Value)).Trim();
+            if (text.Length == 0)
+            {
+                if (builder.Length > 0 && !builder.ToString().EndsWith("\n\n", StringComparison.Ordinal)) builder.AppendLine();
+                continue;
+            }
+
+            var headingLevel = ParseHeadingLevel(style);
+            if (headingLevel > 0)
+                builder.Append(new string('#', headingLevel)).Append(' ').AppendLine(text).AppendLine();
+            else
+                builder.AppendLine(text).AppendLine();
+        }
+
+        return Regex.Replace(builder.ToString().Trim(), "\\n{3,}", "\n\n");
+    }
+
+    private static int ParseHeadingLevel(string style)
+    {
+        if (string.IsNullOrWhiteSpace(style)) return 0;
+        var match = Regex.Match(style, "Heading([1-6])", RegexOptions.IgnoreCase);
+        return match.Success && int.TryParse(match.Groups[1].Value, out var level) ? level : 0;
     }
 
     private static bool IsMarkdownEntry(ZipArchiveEntry entry)
