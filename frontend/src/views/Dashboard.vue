@@ -103,3 +103,7 @@ onMounted(load)
     </div>
   </section>
 </template>
+
+<style scoped>
+.dashboard-grid{align-items:stretch}.link-button,.popular-link,.dashboard-doc-row{border:0!important;background:transparent!important}.link-button{height:auto!important;padding:0!important;color:var(--accent)!important;cursor:pointer}.dashboard-doc-row{width:100%;height:58px!important;padding:0!important;text-align:left;cursor:pointer;color:var(--text)!important}.dashboard-doc-row:hover{background:var(--hover)!important}.dashboard-doc-row>div{min-width:0;display:flex;align-items:center}.dashboard-doc-row b{max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.popular-link{height:auto!important;padding:0!important;color:var(--text-2)!important;cursor:pointer;text-align:left;max-width:80%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.popular-link:hover{color:var(--text)!important}.panel-empty{height:150px;display:grid;place-items:center;color:var(--muted);font-size:.8rem}.task-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.task-summary-card{border:1px solid var(--border);background:var(--surface-2);border-radius:7px;padding:14px;display:grid;gap:7px}.task-summary-card b{font-size:.82rem;margin-bottom:3px}.task-summary-card span{font-size:.75rem;color:var(--text-2)}.danger{color:#ef4444!important}@media(max-width:1000px){.task-summary-grid{grid-template-columns:1fr}}
+</style>
