@@ -4,59 +4,306 @@
 
 ## 当前版本
 
-`v0.13.0`
+`v0.14.0`
 
-当前已具备：JWT/RBAC、用户/角色/部门/组织/菜单管理、知识库与层级文档、Markdown 编辑、标签、收藏、最近访问、附件、版本/回滚/Diff、资源级权限、公开分享与访问审计、异步导入导出任务、Markdown/HTML/DOCX/ZIP 导入、可切换全文搜索、搜索索引任务、审计日志、主题/语言/水印/字号配置、公共表格/树组件、服务端分页、Docker 部署和 GitHub Actions CI。
+当前已具备：
 
-## 技术栈
-
-- 后端：.NET 10 / ASP.NET Core Web API / DDD + Clean Architecture / EF Core 10 / SQLite / JWT
-- 前端：Vue 3 / TypeScript / Vite / Pinia / Vue Router / Axios / Element Plus
-- 搜索：默认 SQLite；可选 Meilisearch
-- 部署：Docker Compose / Nginx
-- 构建：GitHub Actions，自动执行 NuGet 安全检查、.NET Release Build 与 `vue-tsc + vite build`
+- JWT / RBAC
+- 用户、角色、部门、组织、菜单管理
+- 知识库与层级文档
+- Markdown 编辑
+- 标签、收藏、最近访问
+- 附件、版本、回滚、Diff
+- Viewer / Editor / Manager 资源权限
+- 文档显式权限
+- 安全分享与访问审计
+- 异步导入 / 导出任务
+- Markdown / HTML / DOCX / ZIP 导入
+- SQLite / Meilisearch 可切换全文搜索
+- 搜索索引任务
+- 文档评论 / @成员 / 通知中心
+- 统一文件存储抽象
+- 审计日志
+- 主题、语言、水印、字号
+- 公共表格 / 树组件
+- 服务端分页
+- Docker Compose / Nginx
+- GitHub Actions CI
 
 ---
 
-## v0.13.0 重点更新
+## 技术栈
 
-### 1. .NET 10 稳定版与依赖安全升级
+### 后端
 
-项目不再使用早期 `.NET 10 preview.7` 包，核心依赖统一升级到稳定版：
+- .NET 10
+- ASP.NET Core Web API
+- DDD + Clean Architecture
+- EF Core 10
+- SQLite
+- JWT
+- PBKDF2-SHA256
 
-```text
-Microsoft.AspNetCore.Authentication.JwtBearer 10.0.11
-Microsoft.AspNetCore.OpenApi                  10.0.11
-Microsoft.EntityFrameworkCore.Sqlite         10.0.11
-Microsoft.EntityFrameworkCore.Design         10.0.11
-System.Security.Cryptography.Xml             10.0.11
-```
+### 前端
 
-升级前 CI 曾报告 `Microsoft.OpenApi`、`SQLitePCLRaw.lib.e_sqlite3`、`Microsoft.Build.*`、`System.Security.Cryptography.Xml` 等高危依赖告警；升级后后端 CI 已达到：
+- Vue 3
+- TypeScript
+- Vite
+- Pinia
+- Vue Router
+- Axios
+- Element Plus
 
-```text
-Build succeeded.
-0 Warning(s)
-0 Error(s)
-```
+### 可选基础设施
 
-CI 同时升级为：
+- Meilisearch
+- Docker Compose
+- Nginx
 
-```text
-actions/checkout@v7
-actions/setup-dotnet@v5
-actions/setup-node@v6
-```
+---
 
-并增加传递依赖安全检查：
+# v0.14.0 重点更新
 
-```bash
-dotnet list KnowledgeBase.slnx package --vulnerable --include-transitive
-```
-
-### 2. 统一全文搜索抽象
+## 1. 统一文件存储抽象
 
 新增：
+
+```text
+IFileStorage
+└─ LocalFileStorage
+```
+
+业务服务不再直接依赖：
+
+```text
+File.Create
+File.OpenRead
+File.Delete
+PhysicalFile
+AppContext.BaseDirectory + 固定业务路径
+```
+
+统一接口：
+
+```text
+CreateWriteAsync
+OpenReadAsync
+ExistsAsync
+DeleteAsync
+ProviderName
+```
+
+当前配置：
+
+```json
+"Storage": {
+  "Provider": "local",
+  "Local": {
+    "Root": "storage"
+  }
+}
+```
+
+当前已迁移到统一存储的链路：
+
+```text
+文档附件
+异步导入源文件
+异步导出结果文件
+```
+
+后续增加：
+
+```text
+MinIO
+Amazon S3
+阿里云 OSS
+腾讯云 COS
+```
+
+时，业务服务无需修改，只增加 `IFileStorage` 实现和 Provider 注册即可。
+
+### 历史文件兼容
+
+v0.14.0 会兼容旧数据中的：
+
+```text
+storage/attachments/...
+storage/imports/...
+storage/exports/...
+```
+
+新服务读取时会自动转换为统一对象 Key，不要求手工搬迁已有文件。
+
+Docker 下默认：
+
+```text
+Storage__Provider=local
+Storage__Local__Root=/app/storage
+```
+
+并挂载：
+
+```text
+kb-storage:/app/storage
+```
+
+---
+
+## 2. 文档评论
+
+新增：
+
+```text
+Kb_Comment
+Kb_CommentMention
+```
+
+对应后端：
+
+```text
+DocumentComment
+DocumentCommentMention
+ICollaborationService
+CollaborationService
+CollaborationController
+```
+
+支持：
+
+- 文档评论
+- 评论分页
+- 评论内容搜索
+- 本人删除评论
+- 超级管理员删除评论
+- 评论 @成员
+- @成员候选搜索
+- 仅允许 @ 当前知识库成员
+- 评论 CSV 导出
+- 评论列表列设置、列宽、分页等公共表格能力
+
+评论页面：
+
+```text
+/collaboration
+```
+
+用户先选择知识库，再选择具体文档进行讨论。
+
+---
+
+## 3. @成员权限隔离
+
+评论 @成员接口不会开放全部系统用户。
+
+候选接口：
+
+```text
+GET /api/collaboration/documents/{documentId}/mention-users
+```
+
+后端会：
+
+```text
+文档
+ ↓
+KnowledgeBaseId
+ ↓
+Kb_KnowledgeBaseMember
+ ↓
+Sys_User
+```
+
+只返回：
+
+```text
+Id
+UserName
+DisplayName
+```
+
+客户端即使手工提交其他用户 GUID，后端仍会重新校验该用户是否属于当前知识库。
+
+---
+
+## 4. 通知中心
+
+新增：
+
+```text
+Sys_Notification
+UserNotification
+NotificationDto
+NotificationSummaryDto
+```
+
+当前通知来源：
+
+```text
+评论 @成员
+```
+
+后续任务通知、系统公告、分享提醒等都继续复用同一通知表。
+
+通知能力：
+
+- 服务端分页
+- 标题 / 内容搜索
+- 未读数量
+- 单条已读
+- 全部已读
+- 点击通知跳转目标文档
+- 通知列表 CSV 导出
+- 顶栏未读数量
+- 侧栏未读数量
+
+前端新增：
+
+```text
+frontend/src/views/Notifications.vue
+frontend/src/stores/notifications.ts
+frontend/src/api/modules/collaboration.ts
+```
+
+通知入口：
+
+```text
+/notifications
+```
+
+Pinia `notification store` 统一维护未读数量，避免 `App.vue` 和通知页面各自维护重复状态。
+
+---
+
+## 5. v0.14.0 数据库迁移
+
+新增 Migration：
+
+```text
+202609061400_V014Collaboration
+```
+
+新增表：
+
+```text
+Kb_Comment
+Kb_CommentMention
+Sys_Notification
+```
+
+程序启动继续统一执行：
+
+```csharp
+await db.Database.MigrateAsync();
+```
+
+生产升级前请先备份 SQLite 数据库。
+
+---
+
+# 搜索体系
+
+## 搜索抽象
 
 ```text
 IKnowledgeSearchService
@@ -64,9 +311,7 @@ IKnowledgeSearchService
 └─ MeilisearchKnowledgeSearchService
 ```
 
-业务 Controller 不再直接依赖 SQLite 搜索实现。
-
-统一接口负责：
+统一能力：
 
 ```text
 SearchAsync
@@ -76,353 +321,111 @@ RebuildIndexAsync
 ProviderName
 ```
 
-原 `KnowledgeAssetService` 中重复的全文搜索逻辑已经移除，标签、收藏、最近访问、版本和搜索职责正式拆开。
+默认：
 
-### 3. 默认 SQLite / 可选 Meilisearch
-
-默认配置：
-
-```json
-"Search": {
-  "Provider": "sqlite",
-  "Meilisearch": {
-    "Endpoint": "http://127.0.0.1:7700",
-    "ApiKey": "",
-    "IndexName": "knowledge_documents"
-  }
-}
+```text
+Search:Provider = sqlite
 ```
 
-默认 `sqlite` 模式：
-
-- 无需部署额外组件
-- 直接读取文档业务表
-- 支持标题 + Markdown 正文搜索
-- 服务端分页
-- 知识库权限过滤
-
-切换：
+可选：
 
 ```text
 Search:Provider = meilisearch
 ```
 
-后启用外部 Meilisearch。
+Meilisearch 支持：
 
-Meilisearch 索引字段：
+- 标题 + Markdown 正文
+- knowledgeBaseId 权限过滤
+- 增量索引
+- 删除索引
+- 全量重建
+- 搜索任务中心
+- 等待 Meilisearch taskUid 真正 succeeded 后才完成任务
 
-```text
-id
-knowledgeBaseId
-title
-markdown
-updatedAt
+Docker：
+
+```bash
+docker compose --profile search up -d
 ```
 
-其中 `knowledgeBaseId` 配置为 filterable attribute，普通用户搜索时先从数据库解析允许访问的知识库，再将允许范围作为搜索过滤条件发送给 Meilisearch。
+---
 
-### 4. Meilisearch 增量索引
+# 导入导出
 
-文档发生以下操作时：
-
-```text
-创建
-修改
-删除
-```
-
-会自动执行对应索引：
+支持：
 
 ```text
-UpsertDocumentAsync
-DeleteDocumentAsync
+Markdown
+HTML / HTM
+DOCX
+Markdown ZIP
 ```
 
-搜索索引属于派生数据，因此 Meilisearch 临时不可用时：
+ZIP 支持恢复父子文档目录。
 
-- 文档保存不会失败
-- 主业务数据仍正常提交
-- 后端记录 Warning 日志
-- 管理员可进入“搜索管理”执行全量重建
-
-避免搜索基础设施故障拖垮知识库核心写入链路。
-
-### 5. 搜索索引任务中心
-
-新增：
+异步任务：
 
 ```text
-Sys_SearchIndexTask
-SearchIndexTask
-ISearchIndexTaskService
-SearchIndexTaskService
-SearchIndexTaskWorker
-SearchManagementController
-frontend/src/views/SearchManagement.vue
-frontend/src/api/modules/search.ts
+Sys_ImportTask
+Sys_ExportTask
 ```
 
-索引任务状态：
+状态：
 
 ```text
 Pending
 Running
 Completed
 Failed
+Cancelled
 ```
 
 支持：
 
-- 查看当前 Search Provider
-- 查看外部搜索服务地址
-- 创建全量索引重建任务
-- 分页查看任务历史
-- 查看失败原因
-- 失败任务重试
-- 清理历史任务
-
-接口：
-
-```text
-GET    /api/search-management/status
-POST   /api/search-management/rebuild
-GET    /api/search-management/tasks?page=1&pageSize=20
-POST   /api/search-management/tasks/{id}/retry
-DELETE /api/search-management/tasks?retentionDays=30
-```
-
-以上管理接口仅允许 `SUPER_ADMIN` 调用。
-
-### 6. Meilisearch 任务真实完成确认
-
-Meilisearch 写索引本身是异步任务。本系统不会在收到 `taskUid` 后立即把本地任务标记完成，而是继续轮询：
-
-```text
-GET /tasks/{taskUid}
-```
-
-直到：
-
-```text
-succeeded
-```
-
-才将 `Sys_SearchIndexTask` 标记为 `Completed`。
-
-如果 Meilisearch 返回：
-
-```text
-failed
-canceled
-```
-
-本地索引任务会进入 `Failed` 并记录错误信息。
-
-索引首次不存在时会自动创建并配置：
-
-```text
-primaryKey = id
-searchableAttributes = title, markdown
-filterableAttributes = knowledgeBaseId
-```
-
-### 7. DOCX 导入
-
-新增：
-
-```text
-POST /api/content-exchange/knowledge-bases/{knowledgeBaseId}/docx
-```
-
-支持 `.docx`，最大 50 MB。
-
-当前实现直接读取 Office Open XML 包中的：
-
-```text
-word/document.xml
-```
-
-无需安装 Microsoft Office，也不依赖桌面 COM 组件。
-
-当前支持：
-
-- 普通段落文本
-- Heading1 ~ Heading6
-- 标题转换为 Markdown `#` ~ `######`
-- 段落换行
-- 继续执行知识库 Editor / Manager 权限校验
-
-当前暂不保留：
-
-- 图片
-- 表格结构
-- 超链接样式
-- 复杂编号列表
-- 公式
-
-后续可继续增强 DOCX 资源与复杂结构解析。
-
-### 8. Docker 生产化调整
-
-后端镜像已经从：
-
-```text
-10.0-preview
-```
-
-切换为稳定：
-
-```text
-mcr.microsoft.com/dotnet/sdk:10.0
-mcr.microsoft.com/dotnet/aspnet:10.0
-```
-
-前端新增多阶段生产镜像：
-
-```text
-Node.js Build
-    ↓
-Vite dist
-    ↓
-Nginx Runtime
-```
-
-不再通过 Docker 直接运行 Vite 开发服务器。
-
-同时修复 SQLite 数据卷：
-
-```text
-Data Source=/app/data/knowledgebase.db
-kb-data:/app/data
-```
-
-确保容器重建后数据库真实持久化。
-
-附件、导入导出文件统一挂载：
-
-```text
-kb-storage:/app/storage
-```
-
-### 9. Docker 可选 Meilisearch
-
-`docker-compose.yml` 已提供可选搜索 profile，当前镜像：
-
-```text
-getmeili/meilisearch:v1.53.1
-```
-
-默认 SQLite 启动：
-
-```bash
-docker compose up -d
-```
-
-启用 Meilisearch：
-
-```bash
-cp .env.example .env
-```
-
-修改：
-
-```text
-SEARCH_PROVIDER=meilisearch
-MEILISEARCH_API_KEY=<强随机密钥>
-JWT_KEY=<强随机密钥>
-```
-
-然后：
-
-```bash
-docker compose --profile search up -d
-```
-
-首次启用后进入“搜索管理”执行一次全量索引重建。
-
----
-
-## 资源权限规则
-
-```text
-Viewer  -> 查看知识库和文档
-Editor  -> Viewer + 新建/编辑文档、上传附件、导入内容
-Manager -> Editor + 删除、成员管理、文档权限管理、分享管理
-```
-
-主要规则：
-
-- 超级管理员拥有全部资源权限。
-- 创建知识库后，创建人自动成为 Manager。
-- 普通用户只看到自己有权限访问的知识库。
-- 文档显式权限优先于知识库成员权限。
-- SQLite 搜索在 EF Core 查询阶段执行成员过滤。
-- Meilisearch 搜索通过 `knowledgeBaseId` filter 执行允许范围过滤。
-- Markdown / HTML / DOCX / ZIP 导入执行知识库编辑权限。
-- 附件、版本、Diff、分享等接口执行后端资源权限校验。
-- 前端按钮隐藏不是权限安全边界。
-
----
-
-## 异步任务体系
-
-目前已具备：
-
-```text
-导出任务      Sys_ExportTask
-导入任务      Sys_ImportTask
-搜索索引任务  Sys_SearchIndexTask
-```
-
-导入/导出任务支持：
-
-- Pending / Running / Completed / Failed / Cancelled
-- 分页
+- 排队
+- 进度
 - 取消
 - 重试
-- 失败原因
 - 历史清理
-- 临时文件清理
-
-索引任务支持：
-
-- Pending / Running / Completed / Failed
-- 后台串行执行
-- 重试
-- 历史清理
+- 文件清理
 
 ---
 
-## 服务端分页
-
-当前主要服务端分页页面：
-
-- 我的知识库
-- 系统用户
-- 审计日志
-- 全文搜索
-- 最近浏览
-- 我的收藏
-- 导出任务
-- 导入任务
-- 搜索索引任务
-
-统一契约：
+# 权限模型
 
 ```text
-PageQuery
-PageResult<T>
+Viewer
+  查看知识库和文档
+
+Editor
+  Viewer
+  + 创建/编辑文档
+  + 上传附件
+  + 导入内容
+
+Manager
+  Editor
+  + 删除
+  + 成员管理
+  + 文档权限管理
+  + 分享管理
 ```
 
-数据库查询优先：
+原则：
 
-```text
-Where -> Count -> OrderBy -> Skip -> Take
-```
+- 超级管理员拥有全部资源权限。
+- 知识库创建人自动成为 Manager。
+- 普通用户只能看到自己有权限的知识库。
+- 文档显式权限优先于知识库成员权限。
+- 搜索必须在后端执行权限过滤。
+- 附件、版本、Diff、分享、导入导出均执行后端资源权限。
+- 评论读取与创建要求拥有文档查看权限。
+- 前端隐藏按钮不是安全边界。
 
 ---
 
-## 前端公共组件规范
+# 前端公共组件规范
 
 公共组件：
 
@@ -431,29 +434,32 @@ frontend/src/components/common/
 ├─ BaseDataTable.vue
 ├─ BaseTreeManager.vue
 └─ PageHeader.vue
-
-frontend/src/components/knowledge/
-├─ ResourcePermissionPanel.vue
-└─ ShareManagementPanel.vue
 ```
 
-`BaseDataTable` 统一支持：
+`BaseDataTable` 支持：
 
-- 本地分页 / 服务端分页
-- 每页条数配置和记忆
-- CSV 导出 / 勾选导出
-- 显示/隐藏列
-- 拖动列宽
+- 本地分页
+- 服务端分页
+- 每页条数
+- CSV 导出
+- 勾选导出
+- 显示 / 隐藏列
+- 拖动调整列宽
 - 列顺序调整
-- 列配置持久化
+- 配置持久化
 - 固定操作列
 - 排序
-- Loading / Empty
-- 自定义单元格和操作区
+- Loading / Empty 状态
+- 自定义单元格
+- 自定义操作区
 
-业务页面禁止自行复制一套表格、分页、列设置和导出逻辑。
+业务列表页面禁止重复实现表格、分页、列设置和导出逻辑。
 
-API 统一集中于：
+---
+
+# 前端 API 规范
+
+统一放在：
 
 ```text
 frontend/src/api/modules/
@@ -464,132 +470,82 @@ frontend/src/api/modules/
 ├─ access.ts
 ├─ share.ts
 ├─ exchange.ts
-└─ search.ts
+├─ search.ts
+└─ collaboration.ts
 ```
 
-业务页面禁止散落拼接接口 URL。
+页面禁止自行散落：
+
+```ts
+http.get('/xxx')
+http.post('/xxx')
+```
+
+业务 URL、参数和请求配置统一进入领域 API Module。
 
 ---
 
-## 后端开发规范
+# 后端开发规范
 
-- 后端解释性注释统一使用中文。
-- XML `summary` 使用中文说明类、接口和关键方法职责。
-- JWT、PBKDF2、EF Core、HTTP、Meilisearch 等标准技术名称保留原名。
-- Controller 只负责 HTTP、身份、权限和参数映射。
-- 核心业务逻辑进入 Application / Infrastructure 服务层。
-- 搜索通过 `IKnowledgeSearchService` 抽象，不允许业务页面/Controller 绑定具体搜索引擎。
-- 大数据查询优先数据库分页、过滤和排序。
-- 大文件导入导出优先后台任务。
-- 搜索索引、导出文件等派生数据故障不能无条件拖垮核心文档写入。
-- 数据库升级统一使用 EF Core Migration。
-- 权限判断必须在后端执行。
+- 所有解释性代码注释统一使用中文。
+- XML `summary` 使用中文描述职责。
+- JWT、EF Core、HTTP、PBKDF2 等标准技术名称保留原名。
+- Controller 只处理 HTTP、身份、权限和参数映射。
+- 业务逻辑进入 Application / Infrastructure。
+- 文件访问统一使用 `IFileStorage`。
+- 搜索统一使用 `IKnowledgeSearchService`。
+- 大列表优先数据库分页。
+- 大文件优先后台任务。
+- 数据库结构统一 EF Core Migration。
+- 权限校验必须在后端执行。
 
 ---
 
-## EF Core Migration
+# 主要数据库表
 
-程序启动时执行：
-
-```csharp
-await db.Database.MigrateAsync();
-```
-
-当前迁移：
+## 系统
 
 ```text
-202609060600_BaselineV060
-202609061100_V011ExportAndShareAudit
-202609061200_V012ImportTasks
-202609061300_V013SearchIndexTasks
-```
-
-v0.13.0 新增：
-
-```text
+Sys_User
+Sys_Role
+Sys_UserRole
+Sys_Department
+Sys_Organization
+Sys_Menu
+Sys_RoleMenu
+Sys_AuditLog
+Sys_UserAppearanceSetting
+Sys_Notification
+Sys_ImportTask
+Sys_ExportTask
 Sys_SearchIndexTask
 ```
 
-生产升级前必须备份数据库。
-
----
-
-## 主要功能
-
-### 身份认证与系统管理
-
-- JWT 登录 / Bearer Token
-- 401 自动退出
-- PBKDF2-SHA256 密码存储
-- 用户 CRUD / 启停用 / 密码维护
-- 角色 CRUD / 角色菜单授权
-- 部门树 / 组织机构树
-- 菜单 / 按钮权限
-- 审计日志
-
-默认开发账号：
+## 知识资产
 
 ```text
-admin / Admin123!
+Kb_KnowledgeBase
+Kb_KnowledgeBaseMember
+Kb_Document
+Kb_DocumentContent
+Kb_DocumentVersion
+Kb_DocumentPermission
+Kb_Tag
+Kb_DocumentTag
+Kb_Attachment
+Kb_Favorite
+Kb_RecentView
+Kb_ShareLink
+Kb_ShareAccessLog
+Kb_Comment
+Kb_CommentMention
 ```
-
-生产环境必须修改默认密码和 `Jwt:Key`。
-
-### 知识库与文档
-
-- 知识库 CRUD
-- 权限感知分页
-- 文档父子目录树
-- Markdown 编辑
-- 正文与目录分表
-- 标签 / 收藏 / 最近访问
-- 版本 / Diff / 回滚
-- 附件
-- Markdown 导入导出
-- HTML 导入
-- DOCX 导入
-- Markdown ZIP 层级导入
-- 异步 ZIP 导入导出
-- Viewer / Editor / Manager
-- 文档显式权限
-
-### 分享
-
-- 分享链接创建/停用
-- 可选过期时间
-- 可选访问密码
-- PBKDF2 分享密码存储
-- 访问次数
-- 最近访问时间
-- 成功/失败访问日志
-- IP / User-Agent 审计
-- 匿名只读分享页面
-
-### 搜索
-
-- SQLite 默认全文搜索
-- 可选 Meilisearch
-- Provider 抽象
-- 服务端分页
-- 资源权限隔离
-- 按知识库过滤
-- 文档增量索引
-- 全量索引重建任务
-- 索引失败重试
-
-### 界面个性化
-
-- 深色 / 浅色 / 跟随系统
-- 简体中文 / English 基础切换
-- 字号 12~18px
-- 自定义水印
-- 紧凑模式
 
 ---
 
-## 本地启动
+# 启动
 
-后端：
+## 后端
 
 ```bash
 cd backend/KnowledgeBase.Api
@@ -597,7 +553,19 @@ dotnet restore
 dotnet run
 ```
 
-前端：
+默认开发账号：
+
+```text
+admin / Admin123!
+```
+
+生产环境必须修改默认密码与：
+
+```text
+Jwt:Key
+```
+
+## 前端
 
 ```bash
 cd frontend
@@ -605,46 +573,82 @@ npm install
 npm run dev
 ```
 
-生产构建校验：
+---
+
+# Docker
+
+复制环境配置：
 
 ```bash
-cd frontend
-npm run build
+cp .env.example .env
+```
 
-cd ../backend
-dotnet build KnowledgeBase.Api/KnowledgeBase.Api.csproj -c Release
+默认 SQLite 搜索：
+
+```bash
+docker compose up -d
+```
+
+启用 Meilisearch：
+
+```bash
+docker compose --profile search up -d
+```
+
+重要持久化卷：
+
+```text
+kb-data     SQLite
+kb-storage  附件 / 导入 / 导出文件
+meili-data  Meilisearch
 ```
 
 ---
 
-## CI
+# CI
 
-仓库内置：
-
-```text
-.github/workflows/ci.yml
-```
-
-每次 push `main` 或 Pull Request 自动执行：
+`.github/workflows/ci.yml` 在 push main / Pull Request 时执行：
 
 ```text
-NuGet restore
-NuGet vulnerable package check
+NuGet Restore
+NuGet Vulnerability Scan
 .NET 10 Release Build
 npm install
 vue-tsc
-Vite production build
+Vite Production Build
+```
+
+后端漏洞扫描：
+
+```bash
+dotnet list KnowledgeBase.slnx package --vulnerable --include-transitive
+```
+
+当前 .NET 稳定依赖已消除此前高危 NuGet 告警。
+
+---
+
+# 当前 Migration
+
+```text
+202609060600_BaselineV060
+202609061100_V011ExportAndShareAudit
+202609061200_V012ImportTasks
+202609061300_V013SearchIndexTasks
+202609061400_V014Collaboration
 ```
 
 ---
 
-## 下一阶段
+# 下一阶段
 
-1. DOCX 增强：表格、图片、超链接、列表和附件资源导入。
-2. PDF 文本型文档导入；扫描型 PDF 单独评估 OCR，不把 OCR 强绑进核心服务。
-3. Meilisearch 中文分词/同义词/停用词/搜索高亮与相关性配置。
-4. 搜索索引任务增加文档数、已索引数、耗时和进度。
-5. 存储抽象 `IFileStorage`，支持 Local / MinIO / S3 / OSS / COS。
-6. 评论、@成员、通知中心。
-7. API Key、Webhook 和开放 API。
-8. 最后接入可选 Embedding、RAG、语义检索和知识问答，保持智能能力可关闭、可替换。
+优先路线：
+
+1. `IFileStorage` 增加 MinIO 实现，并提供存储连通性测试与迁移工具。
+2. 评论回复树、评论编辑、评论定位到文档段落。
+3. SignalR 实时通知与在线状态。
+4. DOCX 表格、图片、超链接导入。
+5. PDF 文本型文档导入；OCR 单独作为可选能力。
+6. Meilisearch 中文分词、同义词、停用词和相关性配置。
+7. API Key、Webhook、开放 API。
+8. Embedding / RAG / 语义搜索保持可关闭、可替换。
