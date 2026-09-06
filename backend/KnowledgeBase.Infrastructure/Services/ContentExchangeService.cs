@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Net;
 using System.Text;
@@ -7,12 +8,21 @@ using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Contracts.Knowledge;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using NPOI.HWPF;
+using NPOI.SS.UserModel;
+using UglyToad.PdfPig;
+using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
 namespace KnowledgeBase.Infrastructure.Services;
 
-/// <summary>Markdown、HTML、DOCX、ZIP 导入导出与版本 Diff 服务。</summary>
+/// <summary>常见文档、Markdown、HTML、Office、PDF、ZIP 导入导出与版本 Diff 服务。</summary>
 public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentService documents) : IContentExchangeService
 {
+    private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".md", ".markdown", ".html", ".htm", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv"
+    };
+
     /// <summary>导出单篇 Markdown 文档。</summary>
     public async Task<ExportDocumentDto?> ExportMarkdownAsync(Guid documentId, CancellationToken ct)
     {
@@ -53,7 +63,7 @@ public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentServi
         => ImportMarkdownAsync(knowledgeBaseId, parentId, fileName, HtmlToMarkdown(html), ct);
 
     /// <summary>
-    /// 导入 DOCX。直接读取 Office Open XML 包中的 word/document.xml，避免引入重量级 Office 运行时依赖。
+    /// 导入 DOCX。直接读取 Office Open XML 包中的 word/document.xml，避免依赖本机安装 Microsoft Office。
     /// 当前保留普通段落、Heading1~Heading6 标题层级和基础换行。
     /// </summary>
     public async Task<ImportMarkdownResultDto> ImportDocxAsync(
@@ -70,6 +80,44 @@ public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentServi
         await using var documentStream = entry.Open();
         var xml = await XDocument.LoadAsync(documentStream, LoadOptions.None, ct);
         var markdown = ConvertDocxXmlToMarkdown(xml);
+        return await ImportMarkdownAsync(knowledgeBaseId, parentId, fileName, markdown, ct);
+    }
+
+    /// <summary>
+    /// 统一导入常见知识文档。
+    /// TXT/Markdown/HTML/CSV 直接解析文本；PDF 使用 PdfPig；DOC/XLS/XLSX 使用 NPOI；DOCX 保留标题层级。
+    /// </summary>
+    public async Task<ImportMarkdownResultDto> ImportDocumentAsync(
+        Guid knowledgeBaseId,
+        Guid? parentId,
+        string fileName,
+        Stream fileStream,
+        CancellationToken ct)
+    {
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        if (!SupportedExtensions.Contains(extension))
+            throw new NotSupportedException($"不支持的文件格式：{extension}。支持 TXT、Markdown、HTML、PDF、DOC、DOCX、XLS、XLSX、CSV。");
+
+        if (extension == ".docx")
+            return await ImportDocxAsync(knowledgeBaseId, parentId, fileName, fileStream, ct);
+
+        string markdown = extension switch
+        {
+            ".md" or ".markdown" => await ReadTextAsync(fileStream, ct),
+            ".txt" => NormalizePlainText(await ReadTextAsync(fileStream, ct)),
+            ".html" or ".htm" => HtmlToMarkdown(await ReadTextAsync(fileStream, ct)),
+            ".csv" => CsvToMarkdown(await ReadTextAsync(fileStream, ct)),
+            ".pdf" => ExtractPdfMarkdown(fileStream),
+            ".doc" => ExtractLegacyWordMarkdown(fileStream),
+            ".xls" or ".xlsx" => ExtractWorkbookMarkdown(fileStream),
+            _ => throw new NotSupportedException($"不支持的文件格式：{extension}")
+        };
+
+        if (string.IsNullOrWhiteSpace(markdown))
+            throw new InvalidDataException(extension == ".pdf"
+                ? "PDF 未提取到可用文本。该文件可能是扫描件或纯图片 PDF，请使用 OCR 后再导入。"
+                : "文件未解析出可导入的正文内容。");
+
         return await ImportMarkdownAsync(knowledgeBaseId, parentId, fileName, markdown, ct);
     }
 
@@ -145,6 +193,160 @@ public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentServi
         return new(version.DocumentId, version.VersionNumber, BuildDiff(version.Markdown, current));
     }
 
+    /// <summary>读取文本文件，并兼容 UTF-8、UTF-16 BOM 以及常见中文 GBK/GB18030 编码。</summary>
+    private static async Task<string> ReadTextAsync(Stream stream, CancellationToken ct)
+    {
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory, ct);
+        var bytes = memory.ToArray();
+        if (bytes.Length == 0) return string.Empty;
+
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+            return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+            return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+
+        try
+        {
+            return new UTF8Encoding(false, true).GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return Encoding.GetEncoding("GB18030").GetString(bytes);
+        }
+    }
+
+    /// <summary>提取文本型 PDF，并按页保留分隔标题。</summary>
+    private static string ExtractPdfMarkdown(Stream stream)
+    {
+        using var document = PdfDocument.Open(stream);
+        var builder = new StringBuilder();
+        foreach (var page in document.GetPages())
+        {
+            var text = ContentOrderTextExtractor.GetText(page, true).Trim();
+            if (string.IsNullOrWhiteSpace(text)) continue;
+            if (document.NumberOfPages > 1)
+                builder.Append("## 第 ").Append(page.Number).AppendLine(" 页").AppendLine();
+            builder.AppendLine(text).AppendLine();
+        }
+        return NormalizePlainText(builder.ToString());
+    }
+
+    /// <summary>提取 Word 97-2003 DOC 二进制文档正文。</summary>
+    private static string ExtractLegacyWordMarkdown(Stream stream)
+    {
+        using var document = new HWPFDocument(stream);
+        var text = document.Text.ToString();
+        text = text.Replace('\a', '\n').Replace('\v', '\n').Replace('\f', '\n');
+        return NormalizePlainText(text);
+    }
+
+    /// <summary>读取 XLS/XLSX，把每个工作表转换为 Markdown 表格。</summary>
+    private static string ExtractWorkbookMarkdown(Stream stream)
+    {
+        using var workbook = WorkbookFactory.Create(stream);
+        var formatter = new DataFormatter(CultureInfo.GetCultureInfo("zh-CN"));
+        var builder = new StringBuilder();
+
+        for (var sheetIndex = 0; sheetIndex < workbook.NumberOfSheets; sheetIndex++)
+        {
+            var sheet = workbook.GetSheetAt(sheetIndex);
+            if (sheet is null) continue;
+
+            var rows = sheet.Where(row => row is not null).ToList();
+            if (rows.Count == 0) continue;
+
+            var maxColumns = rows.Max(row => Math.Max(0, row.LastCellNum));
+            if (maxColumns == 0) continue;
+
+            builder.Append("## ").AppendLine(sheet.SheetName).AppendLine();
+            var values = rows.Select(row => Enumerable.Range(0, maxColumns)
+                .Select(index => EscapeMarkdownCell(formatter.FormatCellValue(row.GetCell(index))))
+                .ToArray()).ToList();
+
+            AppendMarkdownRow(builder, values[0]);
+            AppendMarkdownRow(builder, Enumerable.Repeat("---", maxColumns));
+            foreach (var row in values.Skip(1)) AppendMarkdownRow(builder, row);
+            builder.AppendLine();
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    /// <summary>将 CSV 转换为 Markdown 表格，支持双引号转义和字段内逗号。</summary>
+    private static string CsvToMarkdown(string csv)
+    {
+        var rows = ParseCsv(csv).Where(row => row.Count > 0).ToList();
+        if (rows.Count == 0) return string.Empty;
+        var maxColumns = rows.Max(x => x.Count);
+        var builder = new StringBuilder();
+
+        AppendMarkdownRow(builder, NormalizeCsvRow(rows[0], maxColumns));
+        AppendMarkdownRow(builder, Enumerable.Repeat("---", maxColumns));
+        foreach (var row in rows.Skip(1)) AppendMarkdownRow(builder, NormalizeCsvRow(row, maxColumns));
+        return builder.ToString().Trim();
+    }
+
+    private static IEnumerable<string> NormalizeCsvRow(IReadOnlyList<string> row, int count)
+        => Enumerable.Range(0, count).Select(i => EscapeMarkdownCell(i < row.Count ? row[i] : string.Empty));
+
+    private static List<List<string>> ParseCsv(string csv)
+    {
+        var rows = new List<List<string>>();
+        var row = new List<string>();
+        var field = new StringBuilder();
+        var quoted = false;
+
+        for (var i = 0; i < csv.Length; i++)
+        {
+            var ch = csv[i];
+            if (ch == '"')
+            {
+                if (quoted && i + 1 < csv.Length && csv[i + 1] == '"')
+                {
+                    field.Append('"');
+                    i++;
+                }
+                else quoted = !quoted;
+            }
+            else if (ch == ',' && !quoted)
+            {
+                row.Add(field.ToString());
+                field.Clear();
+            }
+            else if ((ch == '\r' || ch == '\n') && !quoted)
+            {
+                if (ch == '\r' && i + 1 < csv.Length && csv[i + 1] == '\n') i++;
+                row.Add(field.ToString());
+                field.Clear();
+                if (row.Any(value => !string.IsNullOrWhiteSpace(value))) rows.Add(row);
+                row = new List<string>();
+            }
+            else field.Append(ch);
+        }
+
+        row.Add(field.ToString());
+        if (row.Any(value => !string.IsNullOrWhiteSpace(value))) rows.Add(row);
+        return rows;
+    }
+
+    private static void AppendMarkdownRow(StringBuilder builder, IEnumerable<string> values)
+        => builder.Append("| ").Append(string.Join(" | ", values)).AppendLine(" |");
+
+    private static string EscapeMarkdownCell(string? value)
+        => (value ?? string.Empty).Replace("|", "\\|").Replace("\r", " ").Replace("\n", " ").Trim();
+
+    private static string NormalizePlainText(string text)
+    {
+        text = text.Replace("\r\n", "\n").Replace('\r', '\n').Replace("\0", string.Empty);
+        text = Regex.Replace(text, "[ \\t]+\\n", "\n");
+        text = Regex.Replace(text, "\\n{3,}", "\n\n");
+        return text.Trim();
+    }
+
     private static string ConvertDocxXmlToMarkdown(XDocument xml)
     {
         XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -211,9 +413,7 @@ public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentServi
         text = Regex.Replace(text, @"<(br|/p|/div|/section)>\s*", "\n\n", RegexOptions.IgnoreCase);
         text = Regex.Replace(text, "<[^>]+>", string.Empty);
         text = WebUtility.HtmlDecode(text);
-        text = Regex.Replace(text, "[ \\t]+\\n", "\n");
-        text = Regex.Replace(text, "\\n{3,}", "\n\n");
-        return text.Trim();
+        return NormalizePlainText(text);
     }
 
     private static IReadOnlyList<DiffLineDto> BuildDiff(string oldText, string newText)
