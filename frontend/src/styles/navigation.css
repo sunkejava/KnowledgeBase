@@ -1,0 +1,19 @@
+/*
+ * 左侧菜单激活态由 App.vue 的 isNavActive(path, tab) 唯一计算。
+ * 不使用 Vue Router 默认 router-link-active，避免同一路由不同 query 的菜单同时高亮。
+ */
+.sidebar nav a.nav-active {
+  background: var(--accent-soft);
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.sidebar nav a.route-active-disabled:not(.nav-active) {
+  background: transparent;
+  color: var(--text-2);
+}
+
+.sidebar nav a.route-active-disabled:not(.nav-active):hover {
+  background: var(--hover);
+  color: var(--text);
+}
