@@ -7,23 +7,21 @@ using Microsoft.EntityFrameworkCore;
 namespace KnowledgeBase.Infrastructure.Services;
 
 /// <summary>
-/// 文档附件服务，负责附件文件落盘与元数据维护。
+/// 文档附件服务，负责附件元数据维护；实际文件读写统一委托给 IFileStorage。
 /// </summary>
-public sealed class AttachmentService(KnowledgeDbContext db) : IAttachmentService
+public sealed class AttachmentService(KnowledgeDbContext db, IFileStorage storage) : IAttachmentService
 {
-    private static readonly string Root = Path.Combine(AppContext.BaseDirectory, "storage", "attachments");
-
+    /// <summary>保存附件文件并写入附件元数据。</summary>
     public async Task<AttachmentDto> SaveAsync(Guid documentId, string fileName, string contentType, long size, Stream stream, Guid? uploaderId, CancellationToken ct)
     {
-        Directory.CreateDirectory(Root);
         var stored = $"{Guid.NewGuid():N}{Path.GetExtension(fileName)}";
-        var full = Path.Combine(Root, stored);
-        await using (var fs = File.Create(full))
+        var objectKey = $"attachments/{stored}";
+        await using (var output = await storage.CreateWriteAsync(objectKey, ct))
         {
-            await stream.CopyToAsync(fs, ct);
+            await stream.CopyToAsync(output, ct);
         }
 
-        var entity = new DocumentAttachment(documentId, fileName, stored, contentType, size, Path.Combine("storage", "attachments", stored), uploaderId);
+        var entity = new DocumentAttachment(documentId, fileName, stored, contentType, size, objectKey, uploaderId);
         db.DocumentAttachments.Add(entity);
         await db.SaveChangesAsync(ct);
         return Map(entity);
@@ -36,24 +34,40 @@ public sealed class AttachmentService(KnowledgeDbContext db) : IAttachmentServic
             .Select(x => new AttachmentDto(x.Id, x.DocumentId, x.FileName, x.ContentType, x.Size, $"/api/attachments/{x.Id}/download", x.CreatedAt))
             .ToListAsync(ct);
 
-    public async Task<(Guid DocumentId, string Path, string FileName, string ContentType)?> GetAsync(Guid id, CancellationToken ct)
+    /// <summary>打开附件读取流，不向 Controller 暴露底层物理路径。</summary>
+    public async Task<(Guid DocumentId, Stream Stream, string FileName, string ContentType)?> OpenReadAsync(Guid id, CancellationToken ct)
     {
-        var x = await db.DocumentAttachments.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
-        if (x is null) return null;
-        return (x.DocumentId, Path.Combine(AppContext.BaseDirectory, x.RelativePath), x.FileName, x.ContentType);
+        var entity = await db.DocumentAttachments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (entity is null) return null;
+        var stream = await storage.OpenReadAsync(NormalizeLegacyKey(entity.RelativePath), ct);
+        return stream is null ? null : (entity.DocumentId, stream, entity.FileName, entity.ContentType);
     }
+
+    /// <summary>获取附件所属文档 ID，用于删除前执行资源权限判断。</summary>
+    public Task<Guid?> GetDocumentIdAsync(Guid id, CancellationToken ct)
+        => db.DocumentAttachments.AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => (Guid?)x.DocumentId)
+            .FirstOrDefaultAsync(ct);
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
     {
-        var x = await db.DocumentAttachments.FirstOrDefaultAsync(a => a.Id == id, ct);
-        if (x is null) return false;
-        var full = Path.Combine(AppContext.BaseDirectory, x.RelativePath);
-        if (File.Exists(full)) File.Delete(full);
-        db.DocumentAttachments.Remove(x);
+        var entity = await db.DocumentAttachments.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (entity is null) return false;
+        await storage.DeleteAsync(NormalizeLegacyKey(entity.RelativePath), ct);
+        db.DocumentAttachments.Remove(entity);
         await db.SaveChangesAsync(ct);
         return true;
     }
 
-    private static AttachmentDto Map(DocumentAttachment x)
-        => new(x.Id, x.DocumentId, x.FileName, x.ContentType, x.Size, $"/api/attachments/{x.Id}/download", x.CreatedAt);
+    private static string NormalizeLegacyKey(string path)
+    {
+        var normalized = path.Replace('\\', '/').TrimStart('/');
+        return normalized.StartsWith("storage/", StringComparison.OrdinalIgnoreCase)
+            ? normalized["storage/".Length..]
+            : normalized;
+    }
+
+    private static AttachmentDto Map(DocumentAttachment entity)
+        => new(entity.Id, entity.DocumentId, entity.FileName, entity.ContentType, entity.Size, $"/api/attachments/{entity.Id}/download", entity.CreatedAt);
 }
