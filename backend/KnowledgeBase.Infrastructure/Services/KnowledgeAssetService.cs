@@ -3,10 +3,8 @@ using KnowledgeBase.Contracts.Knowledge;
 using KnowledgeBase.Domain.Entities;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-
 namespace KnowledgeBase.Infrastructure.Services;
-
-public sealed class KnowledgeAssetService(KnowledgeDbContext db) : IKnowledgeAssetService
+public sealed class KnowledgeAssetService(KnowledgeDbContext db):IKnowledgeAssetService
 {
     public async Task<IReadOnlyList<TagDto>> GetTagsAsync(CancellationToken ct)=>await db.DocumentTags.AsNoTracking().OrderBy(x=>x.Name).Select(x=>new TagDto(x.Id,x.Name,x.Color)).ToListAsync(ct);
     public async Task<TagDto> SaveTagAsync(Guid? id,SaveTagRequest r,CancellationToken ct){DocumentTag x;if(id is null){x=new DocumentTag(r.Name,r.Color);db.DocumentTags.Add(x);}else{x=await db.DocumentTags.FirstAsync(a=>a.Id==id,ct);x.Update(r.Name,r.Color);}await db.SaveChangesAsync(ct);return new(x.Id,x.Name,x.Color);}

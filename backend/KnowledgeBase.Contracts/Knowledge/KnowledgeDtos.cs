@@ -1,5 +1,4 @@
 namespace KnowledgeBase.Contracts.Knowledge;
-
 public sealed record TagDto(Guid Id,string Name,string Color);
 public sealed record SaveTagRequest(string Name,string Color);
 public sealed record VersionDto(Guid Id,Guid DocumentId,int VersionNumber,string Title,string ChangeNote,DateTimeOffset CreatedAt);

@@ -5,18 +5,28 @@ import { BookOpen, Boxes, Clock3, FileText, LayoutDashboard, LogOut, Search, Set
 import AppearancePanel from './components/AppearancePanel.vue'
 import { useAppearanceStore } from './stores/appearance'
 import { useAuthStore } from './stores/auth'
+import { usePermissionStore } from './stores/permission'
 import { useLocale } from './composables/useLocale'
 
 const appearance = useAppearanceStore()
 const auth = useAuthStore()
+const permission = usePermissionStore()
 const route = useRoute()
 const router = useRouter()
 const appearanceOpen = ref(false)
 const { t } = useLocale()
 const isLogin = computed(() => route.path === '/login')
-onMounted(() => appearance.load())
+const canOpenSystem = computed(() => permission.roles.includes('SUPER_ADMIN') || permission.can('system:view'))
+
+onMounted(async () => {
+  appearance.load()
+  if (auth.isAuthenticated) {
+    try { await permission.load() } catch { permission.reset() }
+  }
+})
 
 async function logout() {
+  permission.reset()
   auth.logout()
   await router.replace('/login')
 }
@@ -39,9 +49,9 @@ async function logout() {
         <a><Star :size="18"/>{{ t('favorites') }}</a>
         <div class="nav-title">{{ t('platform') }}</div>
         <a><BookOpen :size="18"/>{{ t('content') }}</a>
-        <router-link to="/system"><Settings :size="18"/>{{ t('system') }}</router-link>
+        <router-link v-if="canOpenSystem" to="/system"><Settings :size="18"/>{{ t('system') }}</router-link>
       </nav>
-      <div class="sidebar-footer">v0.3.0 · .NET 10 / Vue 3</div>
+      <div class="sidebar-footer">v0.4.0 · .NET 10 / Vue 3</div>
     </aside>
     <main class="main">
       <header class="topbar">

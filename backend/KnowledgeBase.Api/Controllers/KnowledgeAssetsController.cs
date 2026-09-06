@@ -3,12 +3,8 @@ using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Contracts.Knowledge;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-
 namespace KnowledgeBase.Api.Controllers;
-
-[ApiController]
-[Authorize]
-[Route("api/knowledge-assets")]
+[ApiController][Authorize][Route("api/knowledge-assets")]
 public sealed class KnowledgeAssetsController(IKnowledgeAssetService service):ControllerBase
 {
     private Guid UserId=>Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
