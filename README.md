@@ -4,12 +4,12 @@
 
 ## 当前版本
 
-`v0.14.0`
+`v0.14.1`
 
 当前已具备：
 
 - JWT / RBAC
-- 用户、角色、部门、组织、菜单管理
+- 用户、角色、部门、组织、菜单权限管理
 - 知识库与层级文档
 - Markdown 编辑
 - 标签、收藏、最近访问
@@ -29,6 +29,228 @@
 - 服务端分页
 - Docker Compose / Nginx
 - GitHub Actions CI
+
+详细项目说明：
+
+```text
+docs/PROJECT_GUIDE.md
+```
+
+SQLite 工程规范：
+
+```text
+docs/SQLITE_ENGINEERING_RULES.md
+```
+
+---
+
+# v0.14.1 修复与工程加固
+
+## 1. 修复 SQLite DateTimeOffset 排序异常
+
+已修复典型异常：
+
+```text
+SQLite does not support expressions of type 'DateTimeOffset' in ORDER BY clauses.
+Convert the values to a supported type, or use LINQ to Objects to order the results on the client side.
+```
+
+此前多处业务查询直接对 `DateTimeOffset` 执行：
+
+```csharp
+.OrderBy(x => x.CreatedAt)
+.OrderByDescending(x => x.UpdatedAt)
+```
+
+在 EF Core + SQLite 下会运行时失败。
+
+现已统一增加 SQLite 安全扩展：
+
+```text
+ToSqliteSafeDateTimeOffsetPageAsync
+ToSqliteSafeNullableDateTimeOffsetPageAsync
+ToSqliteSafeDateTimeOffsetListAsync
+FirstOrDefaultSqliteSafeDateTimeOffsetAsync
+```
+
+文件：
+
+```text
+backend/KnowledgeBase.Infrastructure/Common/QueryablePagingExtensions.cs
+```
+
+已处理范围包括：
+
+- 知识库列表
+- 文档树
+- 收藏
+- 最近访问
+- 附件
+- 分享链接
+- 分享访问日志
+- 审计日志
+- 评论
+- 通知
+- 导入任务
+- 导出任务
+- 搜索索引任务
+- SQLite 全文搜索结果
+- 后台任务领取顺序
+
+同时检查并处理了 SQLite 对 `DateTimeOffset` 范围比较的兼容问题，例如：
+
+```csharp
+.Where(x => x.CreatedAt < cutoff)
+```
+
+任务历史清理改为数据库先按普通字段过滤，再在已物化集合中比较 `DateTimeOffset`。
+
+### 大数据量规则
+
+中小列表可以在过滤/投影后通过 LINQ-to-Objects 排序。
+
+如果日志、任务、历史表达到几十万或百万级，禁止把全部数据读入内存排序，必须额外维护：
+
+```text
+CreatedAtUnixMs long
+UpdatedAtUnixMs long
+```
+
+并在 SQLite 中直接对 INTEGER 字段执行索引、范围过滤、排序和分页。
+
+---
+
+## 2. 增加 SQLite DateTimeOffset CI 防回归检查
+
+新增：
+
+```text
+scripts/check_sqlite_datetimeoffset.py
+```
+
+GitHub Actions 后端构建前会执行：
+
+```bash
+python3 scripts/check_sqlite_datetimeoffset.py
+```
+
+用于阻止后续再次直接把常见 `DateTimeOffset` 字段交给 SQLite 做不支持的排序/范围比较。
+
+本规则已经沉淀到：
+
+```text
+docs/SQLITE_ENGINEERING_RULES.md
+```
+
+后续所有 `.NET + EF Core + SQLite` 项目都应默认遵守这套规范。
+
+---
+
+## 3. 清理重复系统管理 Controller
+
+删除旧版：
+
+```text
+backend/KnowledgeBase.Api/Controllers/SystemController.cs
+```
+
+该 Controller 与新版：
+
+```text
+SystemManagementController.cs
+```
+
+存在重复 `/api/system/users|roles|departments|organizations|menus` 路由，可能导致运行时路由冲突。
+
+现在系统管理后端统一由：
+
+```text
+backend/KnowledgeBase.Api/Controllers/SystemManagementController.cs
+```
+
+提供。
+
+---
+
+# 系统管理、菜单权限管理在哪里
+
+前端统一入口：
+
+```text
+/system
+```
+
+侧边栏名称：
+
+```text
+系统管理
+```
+
+显示条件：
+
+```text
+SUPER_ADMIN
+或
+system:view
+```
+
+默认开发账号：
+
+```text
+admin / Admin123!
+```
+
+默认 `admin` 为 `SUPER_ADMIN`，因此可以看到完整系统管理页面。
+
+系统管理页面：
+
+```text
+frontend/src/views/SystemManagement.vue
+```
+
+包含 6 个 Tab：
+
+```text
+用户
+角色
+部门
+组织机构
+菜单权限
+审计日志
+```
+
+菜单权限支持维护：
+
+```text
+父节点
+名称
+类型（目录 / 菜单 / 按钮）
+前端路由 Path
+Permission 权限标识
+Icon
+Sort
+Enabled
+```
+
+角色管理通过 `MenuIds` 绑定菜单/按钮权限。
+
+当前用户的角色、权限标识和菜单画像由：
+
+```text
+GET /api/system/profile
+```
+
+返回，前端统一存储于：
+
+```text
+frontend/src/stores/permission.ts
+```
+
+更详细的菜单、角色、系统 RBAC、资源权限、数据库表、接口和页面说明，请查看：
+
+```text
+docs/PROJECT_GUIDE.md
+```
 
 ---
 
@@ -62,25 +284,13 @@
 
 ---
 
-# v0.14.0 重点更新
+# v0.14.0 主要能力
 
-## 1. 统一文件存储抽象
-
-新增：
+## 统一文件存储抽象
 
 ```text
 IFileStorage
 └─ LocalFileStorage
-```
-
-业务服务不再直接依赖：
-
-```text
-File.Create
-File.OpenRead
-File.Delete
-PhysicalFile
-AppContext.BaseDirectory + 固定业务路径
 ```
 
 统一接口：
@@ -104,7 +314,7 @@ ProviderName
 }
 ```
 
-当前已迁移到统一存储的链路：
+当前已迁移：
 
 ```text
 文档附件
@@ -112,7 +322,7 @@ ProviderName
 异步导出结果文件
 ```
 
-后续增加：
+后续可以增加：
 
 ```text
 MinIO
@@ -121,66 +331,9 @@ Amazon S3
 腾讯云 COS
 ```
 
-时，业务服务无需修改，只增加 `IFileStorage` 实现和 Provider 注册即可。
-
-### 历史文件兼容
-
-v0.14.0 会兼容旧数据中的：
-
-```text
-storage/attachments/...
-storage/imports/...
-storage/exports/...
-```
-
-新服务读取时会自动转换为统一对象 Key，不要求手工搬迁已有文件。
-
-Docker 下默认：
-
-```text
-Storage__Provider=local
-Storage__Local__Root=/app/storage
-```
-
-并挂载：
-
-```text
-kb-storage:/app/storage
-```
-
 ---
 
-## 2. 文档评论
-
-新增：
-
-```text
-Kb_Comment
-Kb_CommentMention
-```
-
-对应后端：
-
-```text
-DocumentComment
-DocumentCommentMention
-ICollaborationService
-CollaborationService
-CollaborationController
-```
-
-支持：
-
-- 文档评论
-- 评论分页
-- 评论内容搜索
-- 本人删除评论
-- 超级管理员删除评论
-- 评论 @成员
-- @成员候选搜索
-- 仅允许 @ 当前知识库成员
-- 评论 CSV 导出
-- 评论列表列设置、列宽、分页等公共表格能力
+## 文档评论 / @成员 / 通知中心
 
 评论页面：
 
@@ -188,102 +341,13 @@ CollaborationController
 /collaboration
 ```
 
-用户先选择知识库，再选择具体文档进行讨论。
-
----
-
-## 3. @成员权限隔离
-
-评论 @成员接口不会开放全部系统用户。
-
-候选接口：
-
-```text
-GET /api/collaboration/documents/{documentId}/mention-users
-```
-
-后端会：
-
-```text
-文档
- ↓
-KnowledgeBaseId
- ↓
-Kb_KnowledgeBaseMember
- ↓
-Sys_User
-```
-
-只返回：
-
-```text
-Id
-UserName
-DisplayName
-```
-
-客户端即使手工提交其他用户 GUID，后端仍会重新校验该用户是否属于当前知识库。
-
----
-
-## 4. 通知中心
-
-新增：
-
-```text
-Sys_Notification
-UserNotification
-NotificationDto
-NotificationSummaryDto
-```
-
-当前通知来源：
-
-```text
-评论 @成员
-```
-
-后续任务通知、系统公告、分享提醒等都继续复用同一通知表。
-
-通知能力：
-
-- 服务端分页
-- 标题 / 内容搜索
-- 未读数量
-- 单条已读
-- 全部已读
-- 点击通知跳转目标文档
-- 通知列表 CSV 导出
-- 顶栏未读数量
-- 侧栏未读数量
-
-前端新增：
-
-```text
-frontend/src/views/Notifications.vue
-frontend/src/stores/notifications.ts
-frontend/src/api/modules/collaboration.ts
-```
-
-通知入口：
+通知页面：
 
 ```text
 /notifications
 ```
 
-Pinia `notification store` 统一维护未读数量，避免 `App.vue` 和通知页面各自维护重复状态。
-
----
-
-## 5. v0.14.0 数据库迁移
-
-新增 Migration：
-
-```text
-202609061400_V014Collaboration
-```
-
-新增表：
+数据表：
 
 ```text
 Kb_Comment
@@ -291,34 +355,24 @@ Kb_CommentMention
 Sys_Notification
 ```
 
-程序启动继续统一执行：
+支持：
 
-```csharp
-await db.Database.MigrateAsync();
-```
-
-生产升级前请先备份 SQLite 数据库。
+- 文档评论
+- @当前知识库成员
+- 评论分页/搜索/导出
+- 通知未读数量
+- 单条已读
+- 全部已读
+- 通知定位到对应知识库和文档
 
 ---
 
 # 搜索体系
 
-## 搜索抽象
-
 ```text
 IKnowledgeSearchService
 ├─ SqliteKnowledgeSearchService
 └─ MeilisearchKnowledgeSearchService
-```
-
-统一能力：
-
-```text
-SearchAsync
-UpsertDocumentAsync
-DeleteDocumentAsync
-RebuildIndexAsync
-ProviderName
 ```
 
 默认：
@@ -343,12 +397,6 @@ Meilisearch 支持：
 - 搜索任务中心
 - 等待 Meilisearch taskUid 真正 succeeded 后才完成任务
 
-Docker：
-
-```bash
-docker compose --profile search up -d
-```
-
 ---
 
 # 导入导出
@@ -362,8 +410,6 @@ DOCX
 Markdown ZIP
 ```
 
-ZIP 支持恢复父子文档目录。
-
 异步任务：
 
 ```text
@@ -371,63 +417,44 @@ Sys_ImportTask
 Sys_ExportTask
 ```
 
-状态：
-
-```text
-Pending
-Running
-Completed
-Failed
-Cancelled
-```
-
-支持：
-
-- 排队
-- 进度
-- 取消
-- 重试
-- 历史清理
-- 文件清理
+支持排队、进度、取消、重试、历史清理和文件清理。
 
 ---
 
 # 权限模型
 
+## 系统级 RBAC
+
+控制系统后台：
+
 ```text
-Viewer
-  查看知识库和文档
-
-Editor
-  Viewer
-  + 创建/编辑文档
-  + 上传附件
-  + 导入内容
-
-Manager
-  Editor
-  + 删除
-  + 成员管理
-  + 文档权限管理
-  + 分享管理
+Sys_User
+Sys_Role
+Sys_UserRole
+Sys_Menu
+Sys_RoleMenu
 ```
 
-原则：
+## 知识资源级权限
 
-- 超级管理员拥有全部资源权限。
-- 知识库创建人自动成为 Manager。
-- 普通用户只能看到自己有权限的知识库。
-- 文档显式权限优先于知识库成员权限。
-- 搜索必须在后端执行权限过滤。
-- 附件、版本、Diff、分享、导入导出均执行后端资源权限。
-- 评论读取与创建要求拥有文档查看权限。
-- 前端隐藏按钮不是安全边界。
+```text
+Viewer
+Editor
+Manager
+```
+
+核心表：
+
+```text
+Kb_KnowledgeBaseMember
+Kb_DocumentPermission
+```
+
+这两套权限不是同一套模型，详细说明参见 `docs/PROJECT_GUIDE.md`。
 
 ---
 
 # 前端公共组件规范
-
-公共组件：
 
 ```text
 frontend/src/components/common/
@@ -436,116 +463,35 @@ frontend/src/components/common/
 └─ PageHeader.vue
 ```
 
-`BaseDataTable` 支持：
+列表页面统一复用分页、CSV 导出、列显示、列宽调整、列顺序和持久化配置能力。
 
-- 本地分页
-- 服务端分页
-- 每页条数
-- CSV 导出
-- 勾选导出
-- 显示 / 隐藏列
-- 拖动调整列宽
-- 列顺序调整
-- 配置持久化
-- 固定操作列
-- 排序
-- Loading / Empty 状态
-- 自定义单元格
-- 自定义操作区
-
-业务列表页面禁止重复实现表格、分页、列设置和导出逻辑。
-
----
-
-# 前端 API 规范
-
-统一放在：
+前端 API 统一放在：
 
 ```text
 frontend/src/api/modules/
-├─ auth.ts
-├─ system.ts
-├─ knowledge.ts
-├─ documents.ts
-├─ access.ts
-├─ share.ts
-├─ exchange.ts
-├─ search.ts
-└─ collaboration.ts
 ```
 
-页面禁止自行散落：
-
-```ts
-http.get('/xxx')
-http.post('/xxx')
-```
-
-业务 URL、参数和请求配置统一进入领域 API Module。
+业务页面禁止重复拼接 API URL。
 
 ---
 
 # 后端开发规范
 
 - 所有解释性代码注释统一使用中文。
-- XML `summary` 使用中文描述职责。
-- JWT、EF Core、HTTP、PBKDF2 等标准技术名称保留原名。
 - Controller 只处理 HTTP、身份、权限和参数映射。
 - 业务逻辑进入 Application / Infrastructure。
 - 文件访问统一使用 `IFileStorage`。
 - 搜索统一使用 `IKnowledgeSearchService`。
-- 大列表优先数据库分页。
-- 大文件优先后台任务。
 - 数据库结构统一 EF Core Migration。
 - 权限校验必须在后端执行。
-
----
-
-# 主要数据库表
-
-## 系统
-
-```text
-Sys_User
-Sys_Role
-Sys_UserRole
-Sys_Department
-Sys_Organization
-Sys_Menu
-Sys_RoleMenu
-Sys_AuditLog
-Sys_UserAppearanceSetting
-Sys_Notification
-Sys_ImportTask
-Sys_ExportTask
-Sys_SearchIndexTask
-```
-
-## 知识资产
-
-```text
-Kb_KnowledgeBase
-Kb_KnowledgeBaseMember
-Kb_Document
-Kb_DocumentContent
-Kb_DocumentVersion
-Kb_DocumentPermission
-Kb_Tag
-Kb_DocumentTag
-Kb_Attachment
-Kb_Favorite
-Kb_RecentView
-Kb_ShareLink
-Kb_ShareAccessLog
-Kb_Comment
-Kb_CommentMention
-```
+- SQLite 禁止直接用 `DateTimeOffset` 做 SQL `ORDER BY` 或范围比较。
+- 大规模 SQLite 时间查询优先维护 Unix 毫秒 `long` 字段。
 
 ---
 
 # 启动
 
-## 后端
+后端：
 
 ```bash
 cd backend/KnowledgeBase.Api
@@ -553,19 +499,7 @@ dotnet restore
 dotnet run
 ```
 
-默认开发账号：
-
-```text
-admin / Admin123!
-```
-
-生产环境必须修改默认密码与：
-
-```text
-Jwt:Key
-```
-
-## 前端
+前端：
 
 ```bash
 cd frontend
@@ -576,12 +510,6 @@ npm run dev
 ---
 
 # Docker
-
-复制环境配置：
-
-```bash
-cp .env.example .env
-```
 
 默认 SQLite 搜索：
 
@@ -595,11 +523,11 @@ docker compose up -d
 docker compose --profile search up -d
 ```
 
-重要持久化卷：
+持久化卷：
 
 ```text
 kb-data     SQLite
-kb-storage  附件 / 导入 / 导出文件
+kb-storage  附件 / 导入 / 导出
 meili-data  Meilisearch
 ```
 
@@ -607,9 +535,10 @@ meili-data  Meilisearch
 
 # CI
 
-`.github/workflows/ci.yml` 在 push main / Pull Request 时执行：
+`.github/workflows/ci.yml` 当前执行：
 
 ```text
+SQLite DateTimeOffset 查询规则检查
 NuGet Restore
 NuGet Vulnerability Scan
 .NET 10 Release Build
@@ -618,17 +547,9 @@ vue-tsc
 Vite Production Build
 ```
 
-后端漏洞扫描：
-
-```bash
-dotnet list KnowledgeBase.slnx package --vulnerable --include-transitive
-```
-
-当前 .NET 稳定依赖已消除此前高危 NuGet 告警。
-
 ---
 
-# 当前 Migration
+# Migration
 
 ```text
 202609060600_BaselineV060
@@ -640,15 +561,28 @@ dotnet list KnowledgeBase.slnx package --vulnerable --include-transitive
 
 ---
 
+# 文档索引
+
+完整项目说明：
+
+```text
+docs/PROJECT_GUIDE.md
+```
+
+SQLite 工程规范：
+
+```text
+docs/SQLITE_ENGINEERING_RULES.md
+```
+
+---
+
 # 下一阶段
 
-优先路线：
-
-1. `IFileStorage` 增加 MinIO 实现，并提供存储连通性测试与迁移工具。
-2. 评论回复树、评论编辑、评论定位到文档段落。
-3. SignalR 实时通知与在线状态。
-4. DOCX 表格、图片、超链接导入。
-5. PDF 文本型文档导入；OCR 单独作为可选能力。
-6. Meilisearch 中文分词、同义词、停用词和相关性配置。
-7. API Key、Webhook、开放 API。
-8. Embedding / RAG / 语义搜索保持可关闭、可替换。
+1. 对可能持续增长的日志/任务表增加 `CreatedAtUnixMs`，将 SQLite 时间分页从内存排序进一步升级为数据库 INTEGER 索引排序。
+2. `IFileStorage` 增加 MinIO 实现和迁移工具。
+3. SignalR 实时通知。
+4. 评论回复树与评论编辑。
+5. DOCX 表格、图片、超链接导入增强。
+6. PDF 文本导入。
+7. API Key / Webhook / 开放 API。
