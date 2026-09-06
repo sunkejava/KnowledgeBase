@@ -31,6 +31,9 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
     public DbSet<SearchIndexTask> SearchIndexTasks => Set<SearchIndexTask>();
     public DbSet<KnowledgeBaseMember> KnowledgeBaseMembers => Set<KnowledgeBaseMember>();
     public DbSet<DocumentUserPermission> DocumentUserPermissions => Set<DocumentUserPermission>();
+    public DbSet<DocumentComment> DocumentComments => Set<DocumentComment>();
+    public DbSet<DocumentCommentMention> DocumentCommentMentions => Set<DocumentCommentMention>();
+    public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -59,5 +62,8 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
         modelBuilder.Entity<SearchIndexTask>(entity => { entity.ToTable("Sys_SearchIndexTask"); entity.HasKey(x => x.Id); entity.Property(x => x.Provider).HasMaxLength(30).IsRequired(); entity.Property(x => x.Status).HasMaxLength(20).IsRequired(); entity.Property(x => x.ErrorMessage).HasMaxLength(1000); entity.HasIndex(x => new { x.Status, x.CreatedAt }); });
         modelBuilder.Entity<KnowledgeBaseMember>(entity => { entity.ToTable("Kb_KnowledgeBaseMember"); entity.HasKey(x => new { x.KnowledgeBaseId, x.UserId }); entity.Property(x => x.Role).HasMaxLength(20).IsRequired(); });
         modelBuilder.Entity<DocumentUserPermission>(entity => { entity.ToTable("Kb_DocumentPermission"); entity.HasKey(x => new { x.DocumentId, x.UserId }); });
+        modelBuilder.Entity<DocumentComment>(entity => { entity.ToTable("Kb_Comment"); entity.HasKey(x => x.Id); entity.Property(x => x.Content).HasMaxLength(4000).IsRequired(); entity.HasIndex(x => new { x.DocumentId, x.CreatedAt }); entity.HasIndex(x => x.UserId); });
+        modelBuilder.Entity<DocumentCommentMention>(entity => { entity.ToTable("Kb_CommentMention"); entity.HasKey(x => new { x.CommentId, x.UserId }); entity.HasIndex(x => x.UserId); });
+        modelBuilder.Entity<UserNotification>(entity => { entity.ToTable("Sys_Notification"); entity.HasKey(x => x.Id); entity.Property(x => x.Type).HasMaxLength(40).IsRequired(); entity.Property(x => x.Title).HasMaxLength(200).IsRequired(); entity.Property(x => x.Content).HasMaxLength(1000); entity.Property(x => x.TargetUrl).HasMaxLength(500); entity.HasIndex(x => new { x.UserId, x.IsRead, x.CreatedAt }); });
     }
 }
