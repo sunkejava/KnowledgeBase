@@ -22,5 +22,10 @@ export const exchangeApi = {
     `/content-exchange/knowledge-bases/${knowledgeBaseId}/html`,
     form,
     { headers: { 'Content-Type': 'multipart/form-data' } }
+  ),
+  importDocx: (knowledgeBaseId: string, form: FormData) => http.post(
+    `/content-exchange/knowledge-bases/${knowledgeBaseId}/docx`,
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } }
   )
 }
