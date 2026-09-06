@@ -48,8 +48,9 @@ public sealed class ExportTasksController(IExportTaskService service, IAccessCon
     [HttpGet("{id:guid}/download")]
     public async Task<IActionResult> Download(Guid id, CancellationToken ct)
     {
-        var file = await service.GetFileAsync(id, UserId, IsSuperAdmin, ct);
-        if (file is null || !System.IO.File.Exists(file.Value.Path)) return NotFound();
-        return PhysicalFile(file.Value.Path, "application/zip", file.Value.FileName);
+        var file = await service.OpenFileAsync(id, UserId, IsSuperAdmin, ct);
+        return file is null
+            ? NotFound()
+            : File(file.Value.Stream, "application/zip", file.Value.FileName, enableRangeProcessing: true);
     }
 }
