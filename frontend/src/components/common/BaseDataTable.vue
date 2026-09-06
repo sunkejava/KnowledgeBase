@@ -87,6 +87,10 @@ function updateVisible(key: string, visible: boolean) {
   savePreferences()
 }
 
+function onVisibleChange(key: string, value: unknown) {
+  updateVisible(key, Boolean(value))
+}
+
 function resetColumns() {
   Object.keys(preferences).forEach(key => delete preferences[key])
   localStorage.removeItem(preferenceStorageKey())
@@ -100,6 +104,10 @@ function onHeaderDragend(newWidth: number, _oldWidth: number, column: any) {
     width: Math.round(newWidth)
   }
   savePreferences()
+}
+
+function onRowDblclick(row: any) {
+  emit('rowDblclick', row)
 }
 
 function exportData() {
@@ -123,7 +131,7 @@ function onSizeChange() {
           <div class="column-setting-head"><strong>显示列与列宽</strong><el-button link @click="resetColumns"><RotateCcw :size="14" />恢复默认</el-button></div>
           <div class="column-setting-list">
             <div v-for="column in resolvedColumns" :key="column.key" class="column-setting-row">
-              <el-checkbox :model-value="column.visible" @change="value => updateVisible(column.key, Boolean(value))">{{ column.label }}</el-checkbox>
+              <el-checkbox :model-value="column.visible" @change="onVisibleChange(column.key, $event)">{{ column.label }}</el-checkbox>
               <span>{{ column.width ? `${column.width}px` : '自适应' }}</span>
             </div>
           </div>
@@ -139,7 +147,7 @@ function onSizeChange() {
       stripe
       border
       table-layout="fixed"
-      @row-dblclick="row => emit('rowDblclick', row)"
+      @row-dblclick="onRowDblclick"
       @header-dragend="onHeaderDragend"
     >
       <el-table-column
