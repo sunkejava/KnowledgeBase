@@ -18,13 +18,12 @@ public sealed class ContentExchangeController(
     IKnowledgeAssetService knowledgeAssets,
     IAccessControlService access) : ControllerBase
 {
-    private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-    private bool IsSuperAdmin => User.IsInRole("SUPER_ADMIN");
+    private Guid CurrentUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet("documents/{documentId:guid}/markdown")]
     public async Task<IActionResult> ExportMarkdown(Guid documentId, CancellationToken ct)
     {
-        if (!await access.CanViewDocumentAsync(documentId, UserId, IsSuperAdmin, ct)) return Forbid();
+        if (!await CanViewDocumentAsync(documentId, ct)) return Forbid();
         var item = await service.ExportMarkdownAsync(documentId, ct);
         return item is null
             ? NotFound()
@@ -39,8 +38,8 @@ public sealed class ContentExchangeController(
         IFormFile file,
         CancellationToken ct)
     {
-        if (!await access.CanEditKnowledgeBaseAsync(knowledgeBaseId, UserId, IsSuperAdmin, ct)) return Forbid();
-        if (parentId.HasValue && !await access.CanEditDocumentAsync(parentId.Value, UserId, IsSuperAdmin, ct)) return Forbid();
+        if (!await CanEditKnowledgeBaseAsync(knowledgeBaseId, ct)) return Forbid();
+        if (parentId.HasValue && !await CanEditDocumentAsync(parentId.Value, ct)) return Forbid();
         if (file.Length == 0) return BadRequest(new { message = "文件不能为空" });
 
         var extension = Path.GetExtension(file.FileName);
@@ -58,7 +57,22 @@ public sealed class ContentExchangeController(
     {
         var version = await knowledgeAssets.GetVersionAsync(versionId, ct);
         if (version is null) return NotFound();
-        if (!await access.CanViewDocumentAsync(version.DocumentId, UserId, IsSuperAdmin, ct)) return Forbid();
+        if (!await CanViewDocumentAsync(version.DocumentId, ct)) return Forbid();
         return await service.DiffVersionToCurrentAsync(versionId, ct) is { } diff ? Ok(diff) : NotFound();
     }
+
+    private Task<bool> CanViewDocumentAsync(Guid documentId, CancellationToken ct)
+        => User.IsInRole("SUPER_ADMIN")
+            ? Task.FromResult(true)
+            : access.CanViewDocumentAsync(documentId, CurrentUserId, ct);
+
+    private Task<bool> CanEditDocumentAsync(Guid documentId, CancellationToken ct)
+        => User.IsInRole("SUPER_ADMIN")
+            ? Task.FromResult(true)
+            : access.CanEditDocumentAsync(documentId, CurrentUserId, ct);
+
+    private Task<bool> CanEditKnowledgeBaseAsync(Guid knowledgeBaseId, CancellationToken ct)
+        => User.IsInRole("SUPER_ADMIN")
+            ? Task.FromResult(true)
+            : access.CanEditKnowledgeBaseAsync(knowledgeBaseId, CurrentUserId, ct);
 }
