@@ -1,22 +1,25 @@
-using System.Globalization;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using ExcelDataReader;
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Contracts.Knowledge;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using NPOI.HWPF;
-using NPOI.SS.UserModel;
+using Microsoft.Extensions.Configuration;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
 namespace KnowledgeBase.Infrastructure.Services;
 
 /// <summary>常见文档、Markdown、HTML、Office、PDF、ZIP 导入导出与版本 Diff 服务。</summary>
-public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentService documents) : IContentExchangeService
+public sealed class ContentExchangeService(
+    KnowledgeDbContext db,
+    IDocumentService documents,
+    IConfiguration configuration) : IContentExchangeService
 {
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -85,7 +88,8 @@ public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentServi
 
     /// <summary>
     /// 统一导入常见知识文档。
-    /// TXT/Markdown/HTML/CSV 直接解析文本；PDF 使用 PdfPig；DOC/XLS/XLSX 使用 NPOI；DOCX 保留标题层级。
+    /// TXT/Markdown/HTML/CSV 直接解析文本；PDF 使用 PdfPig；XLS/XLSX 使用 ExcelDataReader；
+    /// 老式 DOC 通过 LibreOffice headless 转换为文本，避免依赖 Microsoft Office COM。
     /// </summary>
     public async Task<ImportMarkdownResultDto> ImportDocumentAsync(
         Guid knowledgeBaseId,
@@ -108,7 +112,7 @@ public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentServi
             ".html" or ".htm" => HtmlToMarkdown(await ReadTextAsync(fileStream, ct)),
             ".csv" => CsvToMarkdown(await ReadTextAsync(fileStream, ct)),
             ".pdf" => ExtractPdfMarkdown(fileStream),
-            ".doc" => ExtractLegacyWordMarkdown(fileStream),
+            ".doc" => await ExtractLegacyWordMarkdownAsync(fileStream, fileName, ct),
             ".xls" or ".xlsx" => ExtractWorkbookMarkdown(fileStream),
             _ => throw new NotSupportedException($"不支持的文件格式：{extension}")
         };
@@ -235,46 +239,127 @@ public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentServi
         return NormalizePlainText(builder.ToString());
     }
 
-    /// <summary>提取 Word 97-2003 DOC 二进制文档正文。</summary>
-    private static string ExtractLegacyWordMarkdown(Stream stream)
+    /// <summary>
+    /// 提取 Word 97-2003 DOC 正文。
+    /// 使用 LibreOffice headless 做兼容转换，Docker 镜像默认内置；Windows 可通过 DocumentImport:LibreOfficePath 指定 soffice.exe。
+    /// </summary>
+    private async Task<string> ExtractLegacyWordMarkdownAsync(Stream stream, string fileName, CancellationToken ct)
     {
-        using var document = new HWPFDocument(stream);
-        var text = document.Text.ToString();
-        text = text.Replace('\a', '\n').Replace('\v', '\n').Replace('\f', '\n');
-        return NormalizePlainText(text);
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "KnowledgeBase", "doc-import", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        var inputPath = Path.Combine(tempDirectory, Sanitize(Path.GetFileName(fileName)));
+        var outputPath = Path.Combine(tempDirectory, Path.GetFileNameWithoutExtension(inputPath) + ".txt");
+
+        try
+        {
+            await using (var output = File.Create(inputPath))
+                await stream.CopyToAsync(output, ct);
+
+            var executable = ResolveLibreOfficeExecutable();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = executable,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("--headless");
+            startInfo.ArgumentList.Add("--convert-to");
+            startInfo.ArgumentList.Add("txt:Text");
+            startInfo.ArgumentList.Add("--outdir");
+            startInfo.ArgumentList.Add(tempDirectory);
+            startInfo.ArgumentList.Add(inputPath);
+
+            using var process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("无法启动 LibreOffice 文档转换进程。");
+            await process.WaitForExitAsync(ct);
+            var error = await process.StandardError.ReadToEndAsync(ct);
+            if (process.ExitCode != 0 || !File.Exists(outputPath))
+                throw new InvalidDataException($"DOC 转换失败。请确认 LibreOffice 可用。{(string.IsNullOrWhiteSpace(error) ? string.Empty : $" 详情：{error.Trim()}")}");
+
+            await using var converted = File.OpenRead(outputPath);
+            return NormalizePlainText(await ReadTextAsync(converted, ct));
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            throw new InvalidDataException(
+                "当前环境未找到 LibreOffice。DOC(Word 97-2003) 导入需要 LibreOffice headless；Windows 可配置 DocumentImport:LibreOfficePath 指向 soffice.exe。",
+                ex);
+        }
+        finally
+        {
+            try { Directory.Delete(tempDirectory, true); } catch { /* 临时目录清理由系统后续回收，不影响主业务。 */ }
+        }
     }
 
-    /// <summary>读取 XLS/XLSX，把每个工作表转换为 Markdown 表格。</summary>
+    /// <summary>解析 LibreOffice 可执行文件位置。</summary>
+    private string ResolveLibreOfficeExecutable()
+    {
+        var configured = configuration["DocumentImport:LibreOfficePath"];
+        if (!string.IsNullOrWhiteSpace(configured)) return configured;
+
+        if (OperatingSystem.IsWindows())
+        {
+            var candidates = new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "LibreOffice", "program", "soffice.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "LibreOffice", "program", "soffice.exe")
+            };
+            var found = candidates.FirstOrDefault(File.Exists);
+            if (!string.IsNullOrWhiteSpace(found)) return found;
+            return "soffice.exe";
+        }
+
+        return "libreoffice";
+    }
+
+    /// <summary>读取 XLS/XLSX，并把每个工作表转换为 Markdown 表格。</summary>
     private static string ExtractWorkbookMarkdown(Stream stream)
     {
-        using var workbook = WorkbookFactory.Create(stream);
-        var formatter = new DataFormatter(CultureInfo.GetCultureInfo("zh-CN"));
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        using var reader = ExcelReaderFactory.CreateReader(stream);
         var builder = new StringBuilder();
 
-        for (var sheetIndex = 0; sheetIndex < workbook.NumberOfSheets; sheetIndex++)
+        do
         {
-            var sheet = workbook.GetSheetAt(sheetIndex);
-            if (sheet is null) continue;
+            var sheetName = string.IsNullOrWhiteSpace(reader.Name) ? "工作表" : reader.Name;
+            var rows = new List<string[]>();
+            var maxColumns = 0;
 
-            var rows = sheet.Where(row => row is not null).ToList();
-            if (rows.Count == 0) continue;
+            while (reader.Read())
+            {
+                maxColumns = Math.Max(maxColumns, reader.FieldCount);
+                var values = new string[reader.FieldCount];
+                for (var i = 0; i < reader.FieldCount; i++)
+                    values[i] = EscapeMarkdownCell(FormatExcelValue(reader.GetValue(i)));
+                rows.Add(values);
+            }
 
-            var maxColumns = rows.Max(row => Math.Max(0, row.LastCellNum));
-            if (maxColumns == 0) continue;
-
-            builder.Append("## ").AppendLine(sheet.SheetName).AppendLine();
-            var values = rows.Select(row => Enumerable.Range(0, maxColumns)
-                .Select(index => EscapeMarkdownCell(formatter.FormatCellValue(row.GetCell(index))))
-                .ToArray()).ToList();
-
-            AppendMarkdownRow(builder, values[0]);
+            if (rows.Count == 0 || maxColumns == 0) continue;
+            builder.Append("## ").AppendLine(sheetName).AppendLine();
+            AppendMarkdownRow(builder, PadRow(rows[0], maxColumns));
             AppendMarkdownRow(builder, Enumerable.Repeat("---", maxColumns));
-            foreach (var row in values.Skip(1)) AppendMarkdownRow(builder, row);
+            foreach (var row in rows.Skip(1)) AppendMarkdownRow(builder, PadRow(row, maxColumns));
             builder.AppendLine();
-        }
+        } while (reader.NextResult());
 
         return builder.ToString().Trim();
     }
+
+    private static IEnumerable<string> PadRow(IReadOnlyList<string> row, int count)
+        => Enumerable.Range(0, count).Select(i => i < row.Count ? row[i] : string.Empty);
+
+    private static string FormatExcelValue(object? value)
+        => value switch
+        {
+            null => string.Empty,
+            DateTime date => date.ToString("yyyy-MM-dd HH:mm:ss"),
+            double number => number.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
+            float number => number.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
+            decimal number => number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            _ => Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty
+        };
 
     /// <summary>将 CSV 转换为 Markdown 表格，支持双引号转义和字段内逗号。</summary>
     private static string CsvToMarkdown(string csv)
