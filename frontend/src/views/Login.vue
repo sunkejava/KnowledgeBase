@@ -5,49 +5,10 @@ import { ElMessage } from 'element-plus'
 import { LockKeyhole, ShieldCheck } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 
-const router = useRouter()
-const auth = useAuthStore()
-const userName = ref('admin')
-const password = ref('Admin123!')
-const loading = ref(false)
-
-async function submit() {
-  if (!userName.value || !password.value) return
-  loading.value = true
-  try {
-    await auth.login(userName.value, password.value)
-    await router.replace('/')
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '登录失败，请检查账号、密码及后端服务')
-  } finally {
-    loading.value = false
-  }
-}
+const router = useRouter(); const auth = useAuthStore(); const userName = ref('admin'); const password = ref('Admin123!'); const loading = ref(false)
+async function submit() { if (!userName.value || !password.value) return; loading.value = true; try { await auth.login(userName.value, password.value); await router.replace('/') } catch (error:any) { ElMessage.error(error?.response?.data?.message || '登录失败，请检查账号、密码及后端服务') } finally { loading.value = false } }
 </script>
-
-<template>
-  <div class="login-page">
-    <div class="login-visual">
-      <div class="login-brand"><span class="brand-mark">K</span><div><strong>KnowledgeBase</strong><small>Knowledge Asset Platform</small></div></div>
-      <div class="login-copy">
-        <span class="eyebrow">KNOWLEDGE INFRASTRUCTURE</span>
-        <h1>让知识成为<br/>可持续维护的资产。</h1>
-        <p>统一沉淀技术规范、业务资料、项目文档与团队经验，建立可检索、可追踪、可授权的知识基础设施。</p>
-      </div>
-      <div class="login-status"><ShieldCheck :size="16"/> JWT 身份认证 · RBAC 权限模型 · 审计能力预留</div>
-    </div>
-    <div class="login-panel">
-      <div class="login-card">
-        <div class="login-icon"><LockKeyhole :size="20"/></div>
-        <h2>登录工作空间</h2>
-        <p>使用系统账号进入知识资产平台</p>
-        <label>账号</label>
-        <el-input v-model="userName" size="large" autocomplete="username" @keyup.enter="submit" />
-        <label>密码</label>
-        <el-input v-model="password" type="password" show-password size="large" autocomplete="current-password" @keyup.enter="submit" />
-        <el-button class="login-button" type="primary" size="large" :loading="loading" @click="submit">进入系统</el-button>
-        <div class="login-hint">首次启动默认账号：admin / Admin123!，部署后请尽快修改。</div>
-      </div>
-    </div>
-  </div>
-</template>
+<template><div class="login-page"><div class="login-visual"><div class="login-brand"><span class="login-mark">K</span><div><strong>KnowledgeBase</strong><small>Knowledge Asset Platform</small></div></div><div class="login-copy"><span>KNOWLEDGE INFRASTRUCTURE</span><h1>让知识成为<br/>可持续维护的资产。</h1><p>统一沉淀技术规范、业务资料、项目文档与团队经验，建立可检索、可追踪、可授权的知识基础设施。</p></div><div class="login-status"><ShieldCheck :size="16"/> JWT 身份认证 · RBAC 权限模型 · 审计能力预留</div></div><div class="login-panel"><div class="login-card"><div class="login-icon"><LockKeyhole :size="20"/></div><h2>登录工作空间</h2><p>使用系统账号进入知识资产平台</p><label>账号</label><el-input v-model="userName" size="large" autocomplete="username" @keyup.enter="submit"/><label>密码</label><el-input v-model="password" type="password" show-password size="large" autocomplete="current-password" @keyup.enter="submit"/><el-button class="login-button" type="primary" size="large" :loading="loading" @click="submit">进入系统</el-button><div class="login-hint">首次启动默认账号：admin / Admin123!，部署后请尽快修改。</div></div></div></div></template>
+<style scoped>
+.login-page{min-height:100vh;display:grid;grid-template-columns:minmax(480px,1.2fr) minmax(420px,.8fr);background:#0f1115;color:#e8ebf0}.login-visual{padding:48px 7vw;display:flex;flex-direction:column;border-right:1px solid #252a33;background:radial-gradient(circle at 15% 20%,rgba(59,130,246,.12),transparent 32%),#101217}.login-brand{display:flex;align-items:center;gap:12px}.login-mark{width:38px;height:38px;display:grid;place-items:center;border:1px solid #3b82f6;border-radius:8px;background:#17233a;font-weight:800}.login-brand strong,.login-brand small{display:block}.login-brand small{font-size:10px;color:#697382;margin-top:3px}.login-copy{margin:auto 0;max-width:650px}.login-copy>span{font-size:11px;letter-spacing:.2em;color:#6f9bd7}.login-copy h1{font-size:52px;line-height:1.08;letter-spacing:-.04em;margin:20px 0}.login-copy p{font-size:14px;color:#89929f;line-height:1.9;max-width:580px}.login-status{font-size:11px;color:#697382;display:flex;align-items:center;gap:8px}.login-panel{display:grid;place-items:center;padding:40px}.login-card{width:min(390px,100%)}.login-icon{width:42px;height:42px;border:1px solid #303746;border-radius:9px;display:grid;place-items:center;background:#181c23}.login-card h2{font-size:25px;margin:22px 0 6px}.login-card>p{color:#737d8b;font-size:13px;margin:0 0 30px}.login-card label{font-size:12px;display:block;margin:15px 0 7px;color:#a8b0bb}.login-button{width:100%;margin-top:24px}.login-hint{font-size:10px;color:#596270;line-height:1.6;margin-top:16px}@media(max-width:900px){.login-page{grid-template-columns:1fr}.login-visual{display:none}.login-panel{min-height:100vh}}
+</style>

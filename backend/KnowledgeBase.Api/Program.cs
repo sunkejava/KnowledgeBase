@@ -1,7 +1,10 @@
+using System.Text;
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Infrastructure.Persistence;
 using KnowledgeBase.Infrastructure.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,26 +13,43 @@ builder.Services.AddOpenApi();
 builder.Services.AddDbContext<KnowledgeDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=knowledgebase.db"));
 builder.Services.AddScoped<IAppearanceSettingsService, AppearanceSettingsService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IKnowledgeBaseService, KnowledgeBaseService>();
+
+var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key 未配置");
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+builder.Services.AddAuthorization();
 builder.Services.AddCors(options => options.AddPolicy("frontend", policy =>
     policy.AllowAnyHeader().AllowAnyMethod().SetIsOriginAllowed(_ => true).AllowCredentials()));
 
 var app = builder.Build();
 
-// 开发阶段自动创建数据库结构；进入正式迁移管理后切换为 Database.MigrateAsync。
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>();
     await db.Database.EnsureCreatedAsync();
+    await scope.ServiceProvider.GetRequiredService<IAuthService>().EnsureDefaultAdminAsync(CancellationToken.None);
 }
 
 app.UseCors("frontend");
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapOpenApi();
 app.MapControllers();
-app.MapGet("/api/health", () => Results.Ok(new
-{
-    status = "ok",
-    service = "KnowledgeBase.Api",
-    time = DateTimeOffset.UtcNow
-}));
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok", service = "KnowledgeBase.Api", time = DateTimeOffset.UtcNow }));
 
 app.Run();

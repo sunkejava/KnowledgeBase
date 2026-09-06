@@ -4,6 +4,7 @@
     <ProjectReference Include="../KnowledgeBase.Infrastructure/KnowledgeBase.Infrastructure.csproj" />
     <ProjectReference Include="../KnowledgeBase.Contracts/KnowledgeBase.Contracts.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0-preview.7.25380.108" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0-preview.7.25380.108" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0-preview.7.25380.108" />
   </ItemGroup>
 </Project>
