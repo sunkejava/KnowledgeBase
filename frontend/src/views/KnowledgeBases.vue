@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BaseDataTable from '../components/common/BaseDataTable.vue'
@@ -11,6 +11,9 @@ interface Item { id:string; name:string; description:string; createdAt:string; u
 
 const router = useRouter()
 const items = ref<Item[]>([])
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(20)
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
@@ -25,20 +28,30 @@ const columns: TableColumn<Item>[] = [
   { key: 'id', label: '知识库 ID', width: 280, visible: false }
 ]
 
-const filteredItems = computed(() => {
-  const value = keyword.value.trim().toLowerCase()
-  if (!value) return items.value
-  return items.value.filter(item => item.name.toLowerCase().includes(value) || item.description.toLowerCase().includes(value))
-})
-
 function formatTime(value: string) {
   return value ? new Date(value).toLocaleString() : '-'
 }
 
 async function load() {
   loading.value = true
-  try { items.value = (await knowledgeApi.knowledgeBases()).data }
-  finally { loading.value = false }
+  try {
+    const { data } = await knowledgeApi.knowledgeBases(page.value, pageSize.value, keyword.value.trim())
+    items.value = data.items
+    total.value = data.total
+  } finally {
+    loading.value = false
+  }
+}
+
+async function search() {
+  page.value = 1
+  await load()
+}
+
+async function onPageChange(nextPage: number, nextPageSize: number) {
+  page.value = nextPage
+  pageSize.value = nextPageSize
+  await load()
 }
 
 function openCreate() {
@@ -76,29 +89,33 @@ onMounted(load)
 
 <template>
   <section class="page">
-    <PageHeader title="我的知识库" description="按业务边界管理团队知识、成员与权限。">
+    <PageHeader title="我的知识库" description="仅展示当前账号有权访问的知识库；创建人自动拥有 Manager 权限。">
       <template #actions><el-button type="primary" @click="openCreate">创建知识库</el-button></template>
     </PageHeader>
 
     <BaseDataTable
-      :rows="filteredItems"
+      :rows="items"
       :columns="columns"
       :loading="loading"
       storage-key="knowledge-bases"
       export-file-name="KnowledgeBase-知识库列表"
       :action-width="210"
+      server-paging
+      :total-count="total"
       @refresh="load"
+      @page-change="onPageChange"
       @row-dblclick="open"
     >
       <template #toolbar>
-        <el-input v-model="keyword" clearable placeholder="搜索知识库名称或说明" style="width:320px" />
+        <el-input v-model="keyword" clearable placeholder="搜索知识库名称或说明" style="width:320px" @keyup.enter="search" />
+        <el-button type="primary" @click="search">查询</el-button>
       </template>
       <template #actions="{ row }">
         <el-button link type="primary" @click="open(row)">进入</el-button>
         <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
         <el-button link type="danger" @click="remove(row)">删除</el-button>
       </template>
-      <template #empty>尚未创建知识库，从第一个知识空间开始沉淀团队资产。</template>
+      <template #empty>当前账号暂无可访问的知识库。</template>
     </BaseDataTable>
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑知识库' : '创建知识库'" width="520px">
