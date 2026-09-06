@@ -1,7 +1,9 @@
 import { http } from '../http'
 
 export const knowledgeApi = {
-  knowledgeBases: () => http.get('/knowledge-bases'),
+  knowledgeBases: (page = 1, pageSize = 20, keyword = '') =>
+    http.get('/knowledge-bases', { params: { page, pageSize, keyword: keyword || undefined } }),
+  knowledgeBase: (id: string) => http.get(`/knowledge-bases/${id}`),
   createKnowledgeBase: (payload: unknown) => http.post('/knowledge-bases', payload),
   updateKnowledgeBase: (id: string, payload: unknown) => http.put(`/knowledge-bases/${id}`, payload),
   deleteKnowledgeBase: (id: string) => http.delete(`/knowledge-bases/${id}`),
