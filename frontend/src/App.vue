@@ -24,7 +24,7 @@ async function logout(){permission.reset();auth.logout();await router.replace('/
       <router-link :to="{path:'/knowledge-center',query:{tab:'tags'}}"><BookOpen :size="18"/>{{t('content')}}</router-link>
       <router-link to="/data-exchange"><Download :size="18"/>{{t('dataExchange')}}</router-link>
       <router-link v-if="canOpenSystem" to="/system"><Settings :size="18"/>{{t('system')}}</router-link>
-    </nav><div class="sidebar-footer">v0.11.0 · .NET 10 / Vue 3</div></aside>
+    </nav><div class="sidebar-footer">v0.12.0 · .NET 10 / Vue 3</div></aside>
     <main class="main"><header class="topbar"><div class="global-search" @click="router.push('/knowledge-center')"><Search :size="17"/><span>{{t('search')}}</span><kbd>Ctrl K</kbd></div><div class="top-actions"><button class="icon-button" :title="t('appearance')" @click="appearanceOpen=true"><Settings2 :size="17"/></button><div class="user" :title="auth.currentUser?.displayName||'User'">{{(auth.currentUser?.displayName||'U').slice(0,1)}}</div><button class="icon-button" title="退出登录" @click="logout"><LogOut :size="16"/></button></div></header><router-view/></main>
     <AppearancePanel v-model="appearanceOpen"/>
   </div>
