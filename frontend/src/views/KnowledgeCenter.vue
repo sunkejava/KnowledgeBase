@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BaseDataTable from '../components/common/BaseDataTable.vue'
+import PageHeader from '../components/common/PageHeader.vue'
 import type { TableColumn } from '../types/table'
 import { knowledgeApi } from '../api/modules/knowledge'
 
@@ -74,7 +75,7 @@ onMounted(load)
 
 <template>
   <section class="page">
-    <div class="page-head"><div><h1>知识中心</h1><p>统一检索、收藏、最近访问与标签资产；双击文档可直接定位到工作区。</p></div></div>
+    <PageHeader title="知识中心" description="统一检索、收藏、最近访问与标签资产；双击文档可直接定位到工作区。" />
     <el-tabs v-model="tab">
       <el-tab-pane label="全文搜索" name="search"/><el-tab-pane label="最近浏览" name="recent"/>
       <el-tab-pane label="我的收藏" name="favorites"/><el-tab-pane label="标签" name="tags"/>
