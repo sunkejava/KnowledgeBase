@@ -51,7 +51,7 @@ async function logout() {
         <router-link :to="{path:'/knowledge-center',query:{tab:'tags'}}"><BookOpen :size="18"/>{{ t('content') }}</router-link>
         <router-link v-if="canOpenSystem" to="/system"><Settings :size="18"/>{{ t('system') }}</router-link>
       </nav>
-      <div class="sidebar-footer">v0.9.0 · .NET 10 / Vue 3</div>
+      <div class="sidebar-footer">v0.10.0 · .NET 10 / Vue 3</div>
     </aside>
     <main class="main">
       <header class="topbar">
