@@ -24,6 +24,7 @@ const favorite = ref(false)
 const diffLines = ref<any[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const importInput = ref<HTMLInputElement | null>(null)
+const supportedDocumentAccept = '.txt,.md,.markdown,.html,.htm,.pdf,.doc,.docx,.xls,.xlsx,.csv'
 
 const versionColumns: TableColumn<any>[] = [
   { key: 'versionNumber', label: '版本', width: 90, formatter: row => `v${row.versionNumber}`, sortable: true },
@@ -190,17 +191,22 @@ async function exportMarkdown() {
   const { data } = await documentApi.exportMarkdown(editor.id)
   downloadBlob(data, `${editor.title || 'document'}.md`)
 }
-async function importMarkdown(event: Event) {
+
+/**
+ * 在当前知识库中导入常见文档。
+ * 如果当前已打开文档，则导入结果作为该文档的子文档；否则作为根文档。
+ */
+async function importDocument(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
   const form = new FormData()
   form.append('file', file)
-  const { data } = await documentApi.importMarkdown(knowledgeBaseId, form, editor.id || undefined)
+  const { data } = await documentApi.importDocument(knowledgeBaseId, form, editor.id || undefined)
   input.value = ''
   await load()
   await select({ id: data.documentId })
-  ElMessage.success('Markdown 已导入')
+  ElMessage.success(`${file.name} 已导入`)
 }
 async function createShare() {
   if (!editor.id) return
@@ -240,8 +246,8 @@ onMounted(async () => {
       <div class="workspace-actions">
         <button @click="createDoc"><FilePlus2 :size="15"/>新建文档</button>
         <button :disabled="!editor.id" @click="createChild">新建子文档</button>
-        <input ref="importInput" type="file" accept=".md,.markdown" hidden @change="importMarkdown"/>
-        <button @click="importInput?.click()"><Upload :size="15"/>导入</button>
+        <input ref="importInput" type="file" :accept="supportedDocumentAccept" hidden @change="importDocument"/>
+        <button title="支持 TXT、Markdown、HTML、PDF、DOC/DOCX、XLS/XLSX、CSV" @click="importInput?.click()"><Upload :size="15"/>导入</button>
         <button :disabled="!editor.id" @click="exportMarkdown"><Download :size="15"/>导出</button>
         <button :disabled="!editor.id" @click="createShare"><Share2 :size="15"/>分享</button>
         <button :disabled="!editor.id" @click="toggleFavorite"><Star :size="15" :fill="favorite?'currentColor':'none'"/>{{favorite?'已收藏':'收藏'}}</button>
