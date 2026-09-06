@@ -15,7 +15,7 @@ const route = useRoute()
 const router = useRouter()
 const appearanceOpen = ref(false)
 const { t } = useLocale()
-const isLogin = computed(() => route.path === '/login')
+const isPublicPage = computed(() => Boolean(route.meta.public))
 const canOpenSystem = computed(() => permission.roles.includes('SUPER_ADMIN') || permission.can('system:view'))
 
 onMounted(async () => {
@@ -33,7 +33,7 @@ async function logout() {
 </script>
 
 <template>
-  <router-view v-if="isLogin" />
+  <router-view v-if="isPublicPage" />
   <div v-else class="shell">
     <div v-if="appearance.settings.watermarkEnabled" class="watermark-layer" aria-hidden="true">
       <span v-for="n in 30" :key="n">{{ appearance.settings.watermarkText }}</span>
@@ -51,7 +51,7 @@ async function logout() {
         <router-link :to="{path:'/knowledge-center',query:{tab:'tags'}}"><BookOpen :size="18"/>{{ t('content') }}</router-link>
         <router-link v-if="canOpenSystem" to="/system"><Settings :size="18"/>{{ t('system') }}</router-link>
       </nav>
-      <div class="sidebar-footer">v0.5.0 · .NET 10 / Vue 3</div>
+      <div class="sidebar-footer">v0.6.0 · .NET 10 / Vue 3</div>
     </aside>
     <main class="main">
       <header class="topbar">
