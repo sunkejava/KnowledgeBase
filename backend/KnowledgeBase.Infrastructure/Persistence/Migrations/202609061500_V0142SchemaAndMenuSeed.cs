@@ -6,7 +6,7 @@ namespace KnowledgeBase.Infrastructure.Persistence.Migrations;
 
 /// <summary>
 /// v0.14.2 数据结构修复与菜单权限初始化。
-/// 修复早期基线迁移遗漏 Kb_KnowledgeBase.UpdatedAt 的问题，并补齐系统初始菜单权限节点。
+/// 修复早期基线迁移与当前实体模型之间的字段差异，并补齐系统初始菜单权限节点。
 /// </summary>
 [DbContext(typeof(KnowledgeDbContext))]
 [Migration("202609061500_V0142SchemaAndMenuSeed")]
@@ -14,11 +14,21 @@ public sealed class V0142SchemaAndMenuSeed : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        // 早期 BaselineV060 创建 Kb_KnowledgeBase 时遗漏 UpdatedAt，实体模型却一直包含该属性。
-        // 对已有数据库执行增量补列，并使用 CreatedAt 回填，避免所有读取知识库的查询因列缺失失败。
+        // BaselineV060 创建 Kb_KnowledgeBase 时遗漏 UpdatedAt，实体模型却一直包含该属性。
         migrationBuilder.Sql("ALTER TABLE Kb_KnowledgeBase ADD COLUMN UpdatedAt TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00';");
         migrationBuilder.Sql("UPDATE Kb_KnowledgeBase SET UpdatedAt = CreatedAt WHERE UpdatedAt = '1970-01-01T00:00:00+00:00' OR UpdatedAt IS NULL;");
         migrationBuilder.Sql("CREATE INDEX IF NOT EXISTS IX_Kb_KnowledgeBase_UpdatedAt ON Kb_KnowledgeBase(UpdatedAt);");
+
+        // BaselineV060 的正文表只有 Markdown，而当前 DocumentContent 还包含 PlainText 与 UpdatedAt。
+        // 统一在本次兼容迁移中补齐，避免打开文档、搜索、版本等链路继续出现 no such column。
+        migrationBuilder.Sql("ALTER TABLE Kb_DocumentContent ADD COLUMN PlainText TEXT NOT NULL DEFAULT '';");
+        migrationBuilder.Sql("ALTER TABLE Kb_DocumentContent ADD COLUMN UpdatedAt TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00';");
+        migrationBuilder.Sql("UPDATE Kb_DocumentContent SET PlainText = Markdown WHERE PlainText = '';");
+        migrationBuilder.Sql("""
+UPDATE Kb_DocumentContent
+SET UpdatedAt = COALESCE((SELECT d.UpdatedAt FROM Kb_Document d WHERE d.Id = Kb_DocumentContent.DocumentId), '1970-01-01T00:00:00+00:00')
+WHERE UpdatedAt = '1970-01-01T00:00:00+00:00' OR UpdatedAt IS NULL;
+""");
 
         // 使用固定 GUID 初始化菜单，便于后续版本继续做幂等升级和角色授权。
         migrationBuilder.Sql("""
@@ -54,7 +64,7 @@ SELECT r.Id,m.Id FROM Sys_Role r CROSS JOIN Sys_Menu m WHERE r.Code='SUPER_ADMIN
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        // SQLite 删除列会触发表重建，且该修复列已成为正式模型的一部分，因此回滚时不删除 UpdatedAt。
+        // SQLite 删除列会触发表重建，结构修复列已成为正式模型的一部分，因此回滚时不删除这些字段。
         migrationBuilder.Sql("DELETE FROM Sys_RoleMenu WHERE MenuId LIKE '10000000-%';");
         migrationBuilder.Sql("DELETE FROM Sys_Menu WHERE Id LIKE '10000000-%';");
     }
