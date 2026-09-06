@@ -22,6 +22,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: 检查 SQLite DateTimeOffset 查询规则
+        run: python3 scripts/check_sqlite_datetimeoffset.py
+
       - name: 还原依赖
         run: dotnet restore KnowledgeBase.slnx
 
