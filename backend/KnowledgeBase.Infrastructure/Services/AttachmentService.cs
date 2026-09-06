@@ -1,6 +1,7 @@
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Contracts.Knowledge;
 using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Infrastructure.Common;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,12 +28,12 @@ public sealed class AttachmentService(KnowledgeDbContext db, IFileStorage storag
         return Map(entity);
     }
 
-    public async Task<IReadOnlyList<AttachmentDto>> GetListAsync(Guid documentId, CancellationToken ct)
-        => await db.DocumentAttachments.AsNoTracking()
+    /// <summary>获取文档附件列表，按创建时间倒序。SQLite 下使用统一安全排序扩展处理 DateTimeOffset。</summary>
+    public Task<IReadOnlyList<AttachmentDto>> GetListAsync(Guid documentId, CancellationToken ct)
+        => db.DocumentAttachments.AsNoTracking()
             .Where(x => x.DocumentId == documentId)
-            .OrderByDescending(x => x.CreatedAt)
             .Select(x => new AttachmentDto(x.Id, x.DocumentId, x.FileName, x.ContentType, x.Size, $"/api/attachments/{x.Id}/download", x.CreatedAt))
-            .ToListAsync(ct);
+            .ToSqliteSafeDateTimeOffsetListAsync(x => x.CreatedAt, descending: true, ct);
 
     /// <summary>打开附件读取流，不向 Controller 暴露底层物理路径。</summary>
     public async Task<(Guid DocumentId, Stream Stream, string FileName, string ContentType)?> OpenReadAsync(Guid id, CancellationToken ct)
