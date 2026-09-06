@@ -62,7 +62,7 @@ async function logout() {
         <router-link v-if="isSuperAdmin" to="/search-management"><FileSearch :size="18"/>{{t('searchManagement')}}</router-link>
         <router-link v-if="canOpenSystem" to="/system"><Settings :size="18"/>{{t('system')}}</router-link>
       </nav>
-      <div class="sidebar-footer">v0.14.0 · .NET 10 / Vue 3</div>
+      <div class="sidebar-footer">v0.14.1 · .NET 10 / Vue 3</div>
     </aside>
     <main class="main">
       <header class="topbar">
