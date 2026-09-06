@@ -10,7 +10,10 @@ export const documentApi = {
 
   recent: (id: string) => http.post(`/knowledge-assets/documents/${id}/recent`),
   favorite: (id: string) => http.post(`/knowledge-assets/documents/${id}/favorite`),
-  favorites: (page = 1, pageSize = 200) => http.get('/knowledge-assets/favorites', { params: { page, pageSize } }),
+  favorites: async (page = 1, pageSize = 200) => {
+    const response = await http.get('/knowledge-assets/favorites', { params: { page, pageSize } })
+    return { ...response, data: response.data.items }
+  },
 
   versions: (id: string) => http.get(`/knowledge-assets/documents/${id}/versions`),
   createVersion: (id: string, changeNote: string) => http.post(`/knowledge-assets/documents/${id}/versions`, { changeNote }),
