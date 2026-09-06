@@ -6,6 +6,8 @@ import KnowledgeCenter from '../views/KnowledgeCenter.vue'
 import ResourceAccess from '../views/ResourceAccess.vue'
 import DataExchange from '../views/DataExchange.vue'
 import SearchManagement from '../views/SearchManagement.vue'
+import Collaboration from '../views/Collaboration.vue'
+import Notifications from '../views/Notifications.vue'
 import Login from '../views/Login.vue'
 import SystemManagement from '../views/SystemManagement.vue'
 import PublicShare from '../views/PublicShare.vue'
@@ -18,6 +20,8 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/knowledge-bases/:id/access', component: ResourceAccess },
   { path: '/knowledge-bases/:id', component: KnowledgeWorkspace },
   { path: '/knowledge-center', component: KnowledgeCenter },
+  { path: '/collaboration', component: Collaboration },
+  { path: '/notifications', component: Notifications },
   { path: '/data-exchange', component: DataExchange },
   { path: '/search-management', component: SearchManagement },
   { path: '/system', component: SystemManagement }
