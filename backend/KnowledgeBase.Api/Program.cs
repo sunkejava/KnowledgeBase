@@ -15,6 +15,11 @@ builder.Services.AddOpenApi();
 builder.Services.AddDbContext<KnowledgeDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=knowledgebase.db"));
 
+builder.Services.AddHttpClient("meilisearch", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
 builder.Services.AddScoped<IAppearanceSettingsService, AppearanceSettingsService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IKnowledgeBaseService, KnowledgeBaseService>();
@@ -27,8 +32,22 @@ builder.Services.AddScoped<IShareService, ShareService>();
 builder.Services.AddScoped<IAccessControlService, AccessControlService>();
 builder.Services.AddScoped<IExportTaskService, ExportTaskService>();
 builder.Services.AddScoped<IImportTaskService, ImportTaskService>();
+
+// 搜索引擎通过配置切换。默认 SQLite 无外部依赖；配置为 meilisearch 时使用独立全文搜索服务。
+builder.Services.AddScoped<IKnowledgeSearchService>(sp =>
+{
+    var provider = (builder.Configuration["Search:Provider"] ?? "sqlite").Trim().ToLowerInvariant();
+    return provider switch
+    {
+        "meilisearch" => ActivatorUtilities.CreateInstance<MeilisearchKnowledgeSearchService>(sp),
+        _ => ActivatorUtilities.CreateInstance<SqliteKnowledgeSearchService>(sp)
+    };
+});
+builder.Services.AddScoped<ISearchIndexTaskService, SearchIndexTaskService>();
+
 builder.Services.AddHostedService<ExportTaskWorker>();
 builder.Services.AddHostedService<ImportTaskWorker>();
+builder.Services.AddHostedService<SearchIndexTaskWorker>();
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key 未配置");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
