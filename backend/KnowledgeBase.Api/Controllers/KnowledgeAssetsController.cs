@@ -8,13 +8,14 @@ using Microsoft.AspNetCore.Mvc;
 namespace KnowledgeBase.Api.Controllers;
 
 /// <summary>
-/// 知识资产接口，负责标签、收藏、最近访问、版本和基础搜索。
+/// 知识资产接口，负责标签、收藏、最近访问、版本和全文搜索。
 /// </summary>
 [ApiController]
 [Authorize]
 [Route("api/knowledge-assets")]
 public sealed class KnowledgeAssetsController(
     IKnowledgeAssetService service,
+    IKnowledgeSearchService searchService,
     IAccessControlService accessControl) : ControllerBase
 {
     private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -109,13 +110,16 @@ public sealed class KnowledgeAssetsController(
         return await service.RestoreVersionAsync(versionId, UserId, ct) ? NoContent() : NotFound();
     }
 
+    /// <summary>
+    /// 通过统一搜索抽象执行全文搜索，底层实现由 Search:Provider 配置决定。
+    /// </summary>
     [HttpGet("search")]
     public Task<PageResult<SearchResultDto>> Search(
         [FromQuery] string keyword,
         [FromQuery] Guid? knowledgeBaseId,
         [FromQuery] PageQuery query,
         CancellationToken ct)
-        => service.SearchPageAsync(keyword, UserId, User.IsInRole("SUPER_ADMIN"), knowledgeBaseId, query, ct);
+        => searchService.SearchAsync(keyword, UserId, User.IsInRole("SUPER_ADMIN"), knowledgeBaseId, query, ct);
 
     private Task<bool> CanViewDocumentAsync(Guid documentId, CancellationToken ct)
         => User.IsInRole("SUPER_ADMIN")
