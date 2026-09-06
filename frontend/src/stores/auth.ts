@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { http } from '../api/http'
+import { authApi } from '../api/modules/auth'
 
 export interface CurrentUser {
   id: string
@@ -15,7 +15,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => Boolean(token.value))
 
   async function login(userName: string, password: string) {
-    const { data } = await http.post('/auth/login', { userName, password })
+    const { data } = await authApi.login(userName, password)
     token.value = data.accessToken
     currentUser.value = data.user
     localStorage.setItem('kb_access_token', data.accessToken)
