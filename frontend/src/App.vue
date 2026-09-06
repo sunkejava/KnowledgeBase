@@ -21,6 +21,17 @@ const isPublicPage = computed(() => Boolean(route.meta.public))
 const canOpenSystem = computed(() => permission.roles.includes('SUPER_ADMIN') || permission.can('system:view'))
 const isSuperAdmin = computed(() => permission.roles.includes('SUPER_ADMIN'))
 
+/**
+ * 左侧导航使用明确的 path + query 判断激活状态。
+ * Vue Router 默认 active 只按路由记录匹配，/knowledge-center 下不同 tab 会同时高亮，因此不能直接依赖 router-link-active。
+ */
+function isNavActive(path: string, tab?: string) {
+  if (path === '/') return route.path === '/'
+  if (path === '/knowledge-bases') return route.path === '/knowledge-bases' || route.path.startsWith('/knowledge-bases/')
+  if (path === '/knowledge-center') return route.path === path && String(route.query.tab || 'search') === String(tab || 'search')
+  return route.path === path || route.path.startsWith(`${path}/`)
+}
+
 onMounted(async () => {
   appearance.load()
   if (auth.isAuthenticated) {
@@ -48,21 +59,21 @@ async function logout() {
     <aside class="sidebar">
       <div class="brand"><div class="brand-mark">K</div><div><strong>KnowledgeBase</strong><span>Knowledge Asset Platform</span></div></div>
       <nav>
-        <router-link to="/"><LayoutDashboard :size="18"/>{{t('dashboard')}}</router-link>
+        <router-link to="/" :class="{ 'nav-active': isNavActive('/') }"><LayoutDashboard :size="18"/>{{t('dashboard')}}</router-link>
         <div class="nav-title">{{t('knowledgeAssets')}}</div>
-        <router-link to="/knowledge-bases"><Boxes :size="18"/>{{t('myKnowledgeBases')}}</router-link>
-        <router-link :to="{path:'/knowledge-center',query:{tab:'search'}}"><FileText :size="18"/>{{t('allDocuments')}}</router-link>
-        <router-link :to="{path:'/knowledge-center',query:{tab:'recent'}}"><Clock3 :size="18"/>{{t('recent')}}</router-link>
-        <router-link :to="{path:'/knowledge-center',query:{tab:'favorites'}}"><Star :size="18"/>{{t('favorites')}}</router-link>
-        <router-link to="/collaboration"><MessageSquareText :size="18"/>{{t('collaboration')}}</router-link>
+        <router-link to="/knowledge-bases" :class="{ 'nav-active': isNavActive('/knowledge-bases') }"><Boxes :size="18"/>{{t('myKnowledgeBases')}}</router-link>
+        <router-link :to="{path:'/knowledge-center',query:{tab:'search'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','search') }"><FileText :size="18"/>{{t('allDocuments')}}</router-link>
+        <router-link :to="{path:'/knowledge-center',query:{tab:'recent'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','recent') }"><Clock3 :size="18"/>{{t('recent')}}</router-link>
+        <router-link :to="{path:'/knowledge-center',query:{tab:'favorites'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','favorites') }"><Star :size="18"/>{{t('favorites')}}</router-link>
+        <router-link to="/collaboration" :class="{ 'nav-active': isNavActive('/collaboration') }"><MessageSquareText :size="18"/>{{t('collaboration')}}</router-link>
         <div class="nav-title">{{t('platform')}}</div>
-        <router-link :to="{path:'/knowledge-center',query:{tab:'tags'}}"><BookOpen :size="18"/>{{t('content')}}</router-link>
-        <router-link to="/notifications"><Bell :size="18"/>{{t('notifications')}}<span v-if="notifications.unreadCount" style="margin-left:auto;font-size:11px">{{notifications.unreadCount > 99 ? '99+' : notifications.unreadCount}}</span></router-link>
-        <router-link to="/data-exchange"><Download :size="18"/>{{t('dataExchange')}}</router-link>
-        <router-link v-if="isSuperAdmin" to="/search-management"><FileSearch :size="18"/>{{t('searchManagement')}}</router-link>
-        <router-link v-if="canOpenSystem" to="/system"><Settings :size="18"/>{{t('system')}}</router-link>
+        <router-link :to="{path:'/knowledge-center',query:{tab:'tags'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','tags') }"><BookOpen :size="18"/>{{t('content')}}</router-link>
+        <router-link to="/notifications" :class="{ 'nav-active': isNavActive('/notifications') }"><Bell :size="18"/>{{t('notifications')}}<span v-if="notifications.unreadCount" style="margin-left:auto;font-size:11px">{{notifications.unreadCount > 99 ? '99+' : notifications.unreadCount}}</span></router-link>
+        <router-link to="/data-exchange" :class="{ 'nav-active': isNavActive('/data-exchange') }"><Download :size="18"/>{{t('dataExchange')}}</router-link>
+        <router-link v-if="isSuperAdmin" to="/search-management" :class="{ 'nav-active': isNavActive('/search-management') }"><FileSearch :size="18"/>{{t('searchManagement')}}</router-link>
+        <router-link v-if="canOpenSystem" to="/system" :class="{ 'nav-active': isNavActive('/system') }"><Settings :size="18"/>{{t('system')}}</router-link>
       </nav>
-      <div class="sidebar-footer">v0.14.1 · .NET 10 / Vue 3</div>
+      <div class="sidebar-footer">v0.14.2 · .NET 10 / Vue 3</div>
     </aside>
     <main class="main">
       <header class="topbar">
