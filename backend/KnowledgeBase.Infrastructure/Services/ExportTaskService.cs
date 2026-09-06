@@ -103,7 +103,7 @@ public sealed class ExportTaskService(KnowledgeDbContext db) : IExportTaskServic
                 from d in db.Documents.AsNoTracking()
                 join c in db.DocumentContents.AsNoTracking() on d.Id equals c.DocumentId
                 where d.KnowledgeBaseId == task.KnowledgeBaseId
-                select new { d.Id, d.ParentId, d.Title, c.Markdown }
+                select new ExportRow(d.Id, d.ParentId, d.Title, c.Markdown)
             ).ToListAsync(ct);
 
             var map = rows.ToDictionary(x => x.Id);
@@ -135,16 +135,16 @@ public sealed class ExportTaskService(KnowledgeDbContext db) : IExportTaskServic
     private Task<ExportTask?> FindOwnedAsync(Guid taskId, Guid userId, bool isSuperAdmin, CancellationToken ct)
         => db.ExportTasks.FirstOrDefaultAsync(x => x.Id == taskId && (isSuperAdmin || x.UserId == userId), ct);
 
-    private static string BuildEntryPath(Guid id, IReadOnlyDictionary<Guid, dynamic> map)
+    private static string BuildEntryPath(Guid id, IReadOnlyDictionary<Guid, ExportRow> map)
     {
         var segments = new Stack<string>();
         var currentId = id;
         var guard = 0;
         while (map.TryGetValue(currentId, out var current) && guard++ < 100)
         {
-            segments.Push($"{Sanitize((string)current.Title)}-{current.Id:N}");
-            if (current.ParentId is not Guid parentId) break;
-            currentId = parentId;
+            segments.Push($"{Sanitize(current.Title)}-{current.Id:N}");
+            if (!current.ParentId.HasValue) break;
+            currentId = current.ParentId.Value;
         }
 
         var items = segments.ToArray();
@@ -160,4 +160,6 @@ public sealed class ExportTaskService(KnowledgeDbContext db) : IExportTaskServic
         foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
         return string.IsNullOrWhiteSpace(name) ? "knowledge-base" : name;
     }
+
+    private sealed record ExportRow(Guid Id, Guid? ParentId, string Title, string Markdown);
 }
