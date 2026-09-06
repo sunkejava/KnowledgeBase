@@ -18,6 +18,17 @@ export const exchangeApi = {
   retryImportTask: (id: string) => http.post(`/import-tasks/${id}/retry`),
   cleanupImportTasks: (olderThanDays = 7) => http.delete('/import-tasks/cleanup', { params: { olderThanDays } }),
 
+  supportedFormats: () => http.get('/content-exchange/supported-formats'),
+  importDocument: (knowledgeBaseId: string, form: FormData, parentId?: string) => http.post(
+    `/content-exchange/knowledge-bases/${knowledgeBaseId}/document`,
+    form,
+    {
+      params: parentId ? { parentId } : undefined,
+      headers: { 'Content-Type': 'multipart/form-data' }
+    }
+  ),
+
+  // 兼容旧调用，新页面统一使用 importDocument。
   importHtml: (knowledgeBaseId: string, form: FormData) => http.post(
     `/content-exchange/knowledge-bases/${knowledgeBaseId}/html`,
     form,
