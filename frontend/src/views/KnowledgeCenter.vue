@@ -11,6 +11,9 @@ const router = useRouter()
 const tab = ref(String(route.query.tab || 'search'))
 const keyword = ref('')
 const rows = ref<any[]>([])
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(20)
 const loading = ref(false)
 
 const columns = computed<TableColumn<any>[]>(() => {
@@ -38,6 +41,8 @@ const columns = computed<TableColumn<any>[]>(() => {
   ]
 })
 
+const isServerPaging = computed(() => tab.value !== 'tags')
+
 function formatTime(value: string) {
   return value ? new Date(value).toLocaleString() : '-'
 }
@@ -45,20 +50,45 @@ function formatTime(value: string) {
 async function load() {
   loading.value = true
   try {
-    if (tab.value === 'recent') rows.value = (await knowledgeApi.recent()).data
-    else if (tab.value === 'favorites') rows.value = (await knowledgeApi.favorites()).data
-    else if (tab.value === 'tags') rows.value = (await knowledgeApi.tags()).data
-    else if (keyword.value.trim()) rows.value = (await knowledgeApi.search(keyword.value.trim())).data
-    else rows.value = []
+    if (tab.value === 'tags') {
+      rows.value = (await knowledgeApi.tags()).data
+      total.value = rows.value.length
+      return
+    }
+
+    let response
+    if (tab.value === 'recent') response = await knowledgeApi.recent(page.value, pageSize.value, keyword.value.trim())
+    else if (tab.value === 'favorites') response = await knowledgeApi.favorites(page.value, pageSize.value, keyword.value.trim())
+    else if (keyword.value.trim()) response = await knowledgeApi.search(keyword.value.trim(), page.value, pageSize.value)
+    else {
+      rows.value = []
+      total.value = 0
+      return
+    }
+
+    rows.value = response.data.items
+    total.value = response.data.total
   } finally {
     loading.value = false
   }
+}
+
+async function search() {
+  page.value = 1
+  await load()
+}
+
+async function onPageChange(nextPage: number, nextPageSize: number) {
+  page.value = nextPage
+  pageSize.value = nextPageSize
+  await load()
 }
 
 async function open(row: any) {
   if (tab.value === 'tags') return
   const documentId = row.documentId || row.id
   if (!documentId) return
+
   let knowledgeBaseId = row.knowledgeBaseId
   if (!knowledgeBaseId) knowledgeBaseId = (await knowledgeApi.document(documentId)).data.knowledgeBaseId
   if (knowledgeBaseId) await router.push({ path: `/knowledge-bases/${knowledgeBaseId}`, query: { document: documentId } })
@@ -67,6 +97,7 @@ async function open(row: any) {
 watch(tab, async value => {
   await router.replace({ query: { ...route.query, tab: value } })
   keyword.value = ''
+  page.value = 1
   await load()
 })
 
@@ -75,10 +106,12 @@ onMounted(load)
 
 <template>
   <section class="page">
-    <PageHeader title="知识中心" description="统一检索、收藏、最近访问与标签资产；双击文档可直接定位到工作区。" />
+    <PageHeader title="知识中心" description="统一检索、收藏、最近访问与标签资产；搜索结果会自动按当前用户资源权限过滤。" />
     <el-tabs v-model="tab">
-      <el-tab-pane label="全文搜索" name="search"/><el-tab-pane label="最近浏览" name="recent"/>
-      <el-tab-pane label="我的收藏" name="favorites"/><el-tab-pane label="标签" name="tags"/>
+      <el-tab-pane label="全文搜索" name="search"/>
+      <el-tab-pane label="最近浏览" name="recent"/>
+      <el-tab-pane label="我的收藏" name="favorites"/>
+      <el-tab-pane label="标签" name="tags"/>
     </el-tabs>
 
     <BaseDataTable
@@ -87,15 +120,24 @@ onMounted(load)
       :loading="loading"
       :storage-key="`knowledge-center-${tab}`"
       :export-file-name="`KnowledgeBase-${tab}`"
+      :server-paging="isServerPaging"
+      :total-count="total"
       @refresh="load"
+      @page-change="onPageChange"
       @row-dblclick="open"
     >
       <template #toolbar>
-        <template v-if="tab==='search'">
-          <el-input v-model="keyword" clearable placeholder="搜索标题或 Markdown 正文" style="width:360px" @keyup.enter="load" />
-          <el-button type="primary" @click="load">搜索</el-button>
+        <template v-if="tab!=='tags'">
+          <el-input
+            v-model="keyword"
+            clearable
+            :placeholder="tab==='search' ? '搜索标题或 Markdown 正文' : '按文档标题筛选'"
+            style="width:360px"
+            @keyup.enter="search"
+          />
+          <el-button type="primary" @click="search">查询</el-button>
         </template>
-        <span v-else class="list-hint">双击文档行可直接打开对应知识库工作区</span>
+        <span v-else class="list-hint">标签数据量通常较小，当前采用本地分页。</span>
       </template>
       <template #cell-color="{ value }"><span class="tag-color"><i :style="{background:value}" />{{ value }}</span></template>
     </BaseDataTable>
