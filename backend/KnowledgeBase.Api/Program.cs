@@ -33,6 +33,7 @@ builder.Services.AddSingleton<IFileStorage>(sp =>
 
 builder.Services.AddScoped<IAppearanceSettingsService, AppearanceSettingsService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IKnowledgeBaseService, KnowledgeBaseService>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<ISystemManagementService, SystemManagementService>();
