@@ -104,17 +104,27 @@ public sealed class MeilisearchKnowledgeSearchService(
     /// </summary>
     public async Task RebuildIndexAsync(CancellationToken ct)
     {
-        var rows = await (
+        // EF Core 查询阶段只读取数据库原始类型，Guid/DateTimeOffset 格式化统一放到内存中执行，避免 SQLite 翻译差异。
+        var rawRows = await (
             from document in db.Documents.AsNoTracking()
             join content in db.DocumentContents.AsNoTracking() on document.Id equals content.DocumentId
             select new
             {
-                id = document.Id.ToString("D"),
-                knowledgeBaseId = document.KnowledgeBaseId.ToString("D"),
-                title = document.Title,
-                markdown = content.Markdown,
-                updatedAt = document.UpdatedAt.ToString("O")
+                document.Id,
+                document.KnowledgeBaseId,
+                document.Title,
+                content.Markdown,
+                document.UpdatedAt
             }).ToListAsync(ct);
+
+        var rows = rawRows.Select(row => new
+        {
+            id = row.Id.ToString("D"),
+            knowledgeBaseId = row.KnowledgeBaseId.ToString("D"),
+            title = row.Title,
+            markdown = row.Markdown,
+            updatedAt = row.UpdatedAt.ToString("O")
+        }).ToList();
 
         using var client = CreateClient();
         await SendAndEnsureAsync(client, HttpMethod.Delete, $"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}/documents", null, ct, allowNotFound: true);
