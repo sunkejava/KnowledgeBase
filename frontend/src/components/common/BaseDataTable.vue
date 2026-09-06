@@ -35,7 +35,8 @@ const emit = defineEmits<{
 }>()
 
 const currentPage = ref(1)
-const pageSize = ref(props.defaultPageSize)
+const savedPageSize = Number(localStorage.getItem(`kb_table_page_size_${props.storageKey}`))
+const pageSize = ref(props.pageSizes.includes(savedPageSize) ? savedPageSize : props.defaultPageSize)
 const preferences = reactive<Record<string, TableColumnPreference>>({})
 
 function preferenceStorageKey() {
@@ -62,7 +63,6 @@ const resolvedColumns = computed(() => props.columns.map(column => ({
   visible: preferences[column.key]?.visible ?? column.visible ?? true,
   width: preferences[column.key]?.width ?? column.width
 })))
-
 const visibleColumns = computed(() => resolvedColumns.value.filter(column => column.visible))
 const total = computed(() => props.rows.length)
 const pagedRows = computed(() => {
@@ -74,6 +74,7 @@ watch(() => props.rows.length, () => {
   const maxPage = Math.max(1, Math.ceil(total.value / pageSize.value))
   if (currentPage.value > maxPage) currentPage.value = maxPage
 })
+watch(pageSize, value => localStorage.setItem(`kb_table_page_size_${props.storageKey}`, String(value)))
 
 function valueOf(row: Record<string, any>, column: TableColumn<any>) {
   return column.formatter ? column.formatter(row) : row[column.prop || column.key]
@@ -92,7 +93,10 @@ function resetColumns() {
 function onHeaderDragend(newWidth: number, _oldWidth: number, column: any) {
   const target = props.columns.find(item => (item.prop || item.key) === column.property || item.label === column.label)
   if (!target) return
-  preferences[target.key] = { visible: preferences[target.key]?.visible ?? target.visible ?? true, width: Math.round(newWidth) }
+  preferences[target.key] = {
+    visible: preferences[target.key]?.visible ?? target.visible ?? true,
+    width: Math.round(newWidth)
+  }
   savePreferences()
 }
 
@@ -121,15 +125,15 @@ function onSizeChange() {
               <span>{{ column.width ? `${column.width}px` : '自适应' }}</span>
             </div>
           </div>
-          <div class="column-setting-tip">可直接拖动表头分隔线调整列宽，设置会自动保存到当前浏览器。</div>
+          <div class="column-setting-tip">可拖动表头分隔线调整列宽；显示列、列宽和每页条数会自动保存。</div>
         </el-popover>
       </div>
     </div>
 
     <el-table
+      v-loading="loading"
       :data="pagedRows"
       :row-key="rowKey"
-      :loading="loading"
       stripe
       border
       table-layout="fixed"
@@ -176,5 +180,5 @@ function onSizeChange() {
 </template>
 
 <style scoped>
-.base-data-table{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}.base-table-toolbar{min-height:52px;padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}.base-table-toolbar__left,.base-table-toolbar__right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.base-table-pagination{display:flex;justify-content:flex-end;padding:14px 12px;border-top:1px solid var(--border)}.column-setting-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--border)}.column-setting-list{max-height:320px;overflow:auto}.column-setting-row{display:flex;justify-content:space-between;align-items:center;padding:8px 2px;border-bottom:1px solid var(--border)}.column-setting-row span,.column-setting-tip{font-size:11px;color:var(--muted)}.column-setting-tip{padding-top:10px;line-height:1.6}
+.base-data-table{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}.base-table-toolbar{min-height:52px;padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}.base-table-toolbar__left,.base-table-toolbar__right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.base-table-pagination{display:flex;justify-content:flex-end;padding:14px 12px;border-top:1px solid var(--border);overflow-x:auto}.column-setting-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--border)}.column-setting-list{max-height:320px;overflow:auto}.column-setting-row{display:flex;justify-content:space-between;align-items:center;padding:8px 2px;border-bottom:1px solid var(--border)}.column-setting-row span,.column-setting-tip{font-size:11px;color:var(--muted)}.column-setting-tip{padding-top:10px;line-height:1.6}
 </style>
