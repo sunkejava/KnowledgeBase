@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { Download, RefreshCw, RotateCcw, Settings2 } from 'lucide-vue-next'
+import { ArrowDown, ArrowUp, Download, RefreshCw, RotateCcw, Settings2 } from 'lucide-vue-next'
 import type { TableColumn, TableColumnPreference } from '../../types/table'
 import { exportRowsToCsv } from '../../utils/exportCsv'
 
@@ -17,6 +17,9 @@ const props = withDefaults(defineProps<{
   showColumnSetting?: boolean
   showRefresh?: boolean
   showActions?: boolean
+  showSelection?: boolean
+  serverPaging?: boolean
+  totalCount?: number
   actionWidth?: number
 }>(), {
   loading: false,
@@ -28,15 +31,21 @@ const props = withDefaults(defineProps<{
   showColumnSetting: true,
   showRefresh: true,
   showActions: true,
+  showSelection: true,
+  serverPaging: false,
+  totalCount: 0,
   actionWidth: 180
 })
 
 const emit = defineEmits<{
   refresh: []
   rowDblclick: [row: any]
+  pageChange: [page: number, pageSize: number]
+  selectionChange: [rows: any[]]
 }>()
 
 const currentPage = ref(1)
+const selectedRows = ref<any[]>([])
 const savedPageSize = Number(localStorage.getItem(`kb_table_page_size_${props.storageKey}`))
 const pageSize = ref(props.pageSizes.includes(savedPageSize) ? savedPageSize : props.defaultPageSize)
 const preferences = reactive<Record<string, TableColumnPreference>>({})
@@ -60,23 +69,31 @@ function savePreferences() {
 
 loadPreferences()
 
-const resolvedColumns = computed(() => props.columns.map(column => ({
-  ...column,
-  visible: preferences[column.key]?.visible ?? column.visible ?? true,
-  width: preferences[column.key]?.width ?? column.width
-})))
+const resolvedColumns = computed(() => props.columns
+  .map((column, index) => ({
+    ...column,
+    visible: preferences[column.key]?.visible ?? column.visible ?? true,
+    width: preferences[column.key]?.width ?? column.width,
+    order: preferences[column.key]?.order ?? index
+  }))
+  .sort((a, b) => a.order - b.order))
 const visibleColumns = computed(() => resolvedColumns.value.filter(column => column.visible))
-const total = computed(() => props.rows.length)
+const total = computed(() => props.serverPaging ? props.totalCount : props.rows.length)
 const pagedRows = computed(() => {
+  if (props.serverPaging) return props.rows
   const start = (currentPage.value - 1) * pageSize.value
   return props.rows.slice(start, start + pageSize.value)
 })
 
-watch(() => props.rows.length, () => {
+watch(() => total.value, () => {
   const maxPage = Math.max(1, Math.ceil(total.value / pageSize.value))
   if (currentPage.value > maxPage) currentPage.value = maxPage
 })
 watch(pageSize, value => localStorage.setItem(`kb_table_page_size_${props.storageKey}`, String(value)))
+watch(() => props.storageKey, () => {
+  currentPage.value = 1
+  selectedRows.value = []
+})
 
 function valueOf(row: any, column: TableColumn<any>) {
   return column.formatter ? column.formatter(row) : row[column.prop || column.key]
@@ -91,6 +108,22 @@ function onVisibleChange(key: string, value: unknown) {
   updateVisible(key, Boolean(value))
 }
 
+function moveColumn(key: string, offset: number) {
+  const ordered = resolvedColumns.value.map(item => item.key)
+  const index = ordered.indexOf(key)
+  const target = index + offset
+  if (index < 0 || target < 0 || target >= ordered.length) return
+  ;[ordered[index], ordered[target]] = [ordered[target], ordered[index]]
+  ordered.forEach((columnKey, order) => {
+    preferences[columnKey] = {
+      visible: preferences[columnKey]?.visible ?? props.columns.find(x => x.key === columnKey)?.visible ?? true,
+      width: preferences[columnKey]?.width,
+      order
+    }
+  })
+  savePreferences()
+}
+
 function resetColumns() {
   Object.keys(preferences).forEach(key => delete preferences[key])
   localStorage.removeItem(preferenceStorageKey())
@@ -101,7 +134,8 @@ function onHeaderDragend(newWidth: number, _oldWidth: number, column: any) {
   if (!target) return
   preferences[target.key] = {
     visible: preferences[target.key]?.visible ?? target.visible ?? true,
-    width: Math.round(newWidth)
+    width: Math.round(newWidth),
+    order: preferences[target.key]?.order
   }
   savePreferences()
 }
@@ -110,12 +144,27 @@ function onRowDblclick(row: any) {
   emit('rowDblclick', row)
 }
 
+function onSelectionChange(rows: any[]) {
+  selectedRows.value = rows
+  emit('selectionChange', rows)
+}
+
 function exportData() {
-  exportRowsToCsv(props.exportFileName, visibleColumns.value, props.rows)
+  const rows = selectedRows.value.length > 0 ? selectedRows.value : props.rows
+  exportRowsToCsv(props.exportFileName, visibleColumns.value, rows)
+}
+
+function requestPage() {
+  if (props.serverPaging) emit('pageChange', currentPage.value, pageSize.value)
 }
 
 function onSizeChange() {
   currentPage.value = 1
+  requestPage()
+}
+
+function onCurrentChange() {
+  requestPage()
 }
 </script>
 
@@ -124,18 +173,23 @@ function onSizeChange() {
     <div class="base-table-toolbar">
       <div class="base-table-toolbar__left"><slot name="toolbar" /></div>
       <div class="base-table-toolbar__right">
+        <span v-if="selectedRows.length" class="selected-tip">已选择 {{ selectedRows.length }} 条</span>
         <el-button v-if="showRefresh" @click="emit('refresh')"><RefreshCw :size="15" />刷新</el-button>
-        <el-button v-if="showExport" @click="exportData"><Download :size="15" />导出当前数据</el-button>
-        <el-popover v-if="showColumnSetting" placement="bottom-end" :width="320" trigger="click">
+        <el-button v-if="showExport" @click="exportData"><Download :size="15" />{{ selectedRows.length ? '导出选中' : (serverPaging ? '导出当前页' : '导出当前数据') }}</el-button>
+        <el-popover v-if="showColumnSetting" placement="bottom-end" :width="360" trigger="click">
           <template #reference><el-button><Settings2 :size="15" />列设置</el-button></template>
-          <div class="column-setting-head"><strong>显示列与列宽</strong><el-button link @click="resetColumns"><RotateCcw :size="14" />恢复默认</el-button></div>
+          <div class="column-setting-head"><strong>显示列、顺序与列宽</strong><el-button link @click="resetColumns"><RotateCcw :size="14" />恢复默认</el-button></div>
           <div class="column-setting-list">
-            <div v-for="column in resolvedColumns" :key="column.key" class="column-setting-row">
+            <div v-for="(column,index) in resolvedColumns" :key="column.key" class="column-setting-row">
               <el-checkbox :model-value="column.visible" @change="onVisibleChange(column.key, $event)">{{ column.label }}</el-checkbox>
-              <span>{{ column.width ? `${column.width}px` : '自适应' }}</span>
+              <div class="column-setting-actions">
+                <span>{{ column.width ? `${column.width}px` : '自适应' }}</span>
+                <el-button link :disabled="index===0" @click="moveColumn(column.key,-1)"><ArrowUp :size="13"/></el-button>
+                <el-button link :disabled="index===resolvedColumns.length-1" @click="moveColumn(column.key,1)"><ArrowDown :size="13"/></el-button>
+              </div>
             </div>
           </div>
-          <div class="column-setting-tip">可拖动表头分隔线调整列宽；显示列、列宽和每页条数会自动保存。</div>
+          <div class="column-setting-tip">可拖动表头调整列宽；显示列、列顺序、列宽和每页条数会自动保存。</div>
         </el-popover>
       </div>
     </div>
@@ -149,7 +203,9 @@ function onSizeChange() {
       table-layout="fixed"
       @row-dblclick="onRowDblclick"
       @header-dragend="onHeaderDragend"
+      @selection-change="onSelectionChange"
     >
+      <el-table-column v-if="showSelection" type="selection" width="48" fixed="left" />
       <el-table-column
         v-for="column in visibleColumns"
         :key="column.key"
@@ -184,11 +240,12 @@ function onSizeChange() {
         :total="total"
         layout="total, sizes, prev, pager, next, jumper"
         @size-change="onSizeChange"
+        @current-change="onCurrentChange"
       />
     </div>
   </div>
 </template>
 
 <style scoped>
-.base-data-table{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}.base-table-toolbar{min-height:52px;padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}.base-table-toolbar__left,.base-table-toolbar__right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.base-table-pagination{display:flex;justify-content:flex-end;padding:14px 12px;border-top:1px solid var(--border);overflow-x:auto}.column-setting-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--border)}.column-setting-list{max-height:320px;overflow:auto}.column-setting-row{display:flex;justify-content:space-between;align-items:center;padding:8px 2px;border-bottom:1px solid var(--border)}.column-setting-row span,.column-setting-tip{font-size:11px;color:var(--muted)}.column-setting-tip{padding-top:10px;line-height:1.6}
+.base-data-table{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}.base-table-toolbar{min-height:52px;padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}.base-table-toolbar__left,.base-table-toolbar__right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.base-table-pagination{display:flex;justify-content:flex-end;padding:14px 12px;border-top:1px solid var(--border);overflow-x:auto}.selected-tip{font-size:12px;color:var(--accent)}.column-setting-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--border)}.column-setting-list{max-height:360px;overflow:auto}.column-setting-row{display:flex;justify-content:space-between;align-items:center;padding:8px 2px;border-bottom:1px solid var(--border);gap:12px}.column-setting-actions{display:flex;align-items:center;gap:2px}.column-setting-actions span,.column-setting-tip{font-size:11px;color:var(--muted)}.column-setting-tip{padding-top:10px;line-height:1.6}
 </style>
