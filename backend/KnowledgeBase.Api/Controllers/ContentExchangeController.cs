@@ -13,7 +13,32 @@ namespace KnowledgeBase.Api.Controllers;
 [Route("api/content-exchange")]
 public sealed class ContentExchangeController(IContentExchangeService service, IAccessControlService accessControl) : ControllerBase
 {
+    private static readonly string[] SupportedDocumentExtensions =
+        [".txt", ".md", ".markdown", ".html", ".htm", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv"];
+
     private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    /// <summary>返回当前支持的知识文档导入格式。</summary>
+    [HttpGet("supported-formats")]
+    public IActionResult SupportedFormats() => Ok(new
+    {
+        extensions = SupportedDocumentExtensions,
+        descriptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [".txt"] = "纯文本",
+            [".md"] = "Markdown",
+            [".markdown"] = "Markdown",
+            [".html"] = "HTML",
+            [".htm"] = "HTML",
+            [".pdf"] = "文本型 PDF",
+            [".doc"] = "Word 97-2003",
+            [".docx"] = "Word Open XML",
+            [".xls"] = "Excel 97-2003",
+            [".xlsx"] = "Excel Open XML",
+            [".csv"] = "CSV 表格"
+        },
+        note = "扫描件或纯图片 PDF 暂不自动 OCR，未提取到文本时会明确提示。"
+    });
 
     /// <summary>导出单篇 Markdown 文档。</summary>
     [HttpGet("documents/{documentId:guid}/markdown")]
@@ -24,7 +49,46 @@ public sealed class ContentExchangeController(IContentExchangeService service, I
         return item is null ? NotFound() : File(Encoding.UTF8.GetBytes(item.Markdown), "text/markdown; charset=utf-8", item.FileName);
     }
 
-    /// <summary>导入单篇 Markdown 文档。</summary>
+    /// <summary>
+    /// 统一导入常见文档格式。
+    /// 支持 TXT、Markdown、HTML、PDF、DOC、DOCX、XLS、XLSX、CSV。
+    /// </summary>
+    [HttpPost("knowledge-bases/{knowledgeBaseId:guid}/document")]
+    [RequestSizeLimit(100 * 1024 * 1024)]
+    public async Task<ActionResult<ImportMarkdownResultDto>> ImportDocument(
+        Guid knowledgeBaseId,
+        [FromQuery] Guid? parentId,
+        IFormFile file,
+        CancellationToken ct)
+    {
+        if (!await CanEditKnowledgeBaseAsync(knowledgeBaseId, ct)) return Forbid();
+        if (parentId.HasValue && !await CanEditDocumentAsync(parentId.Value, ct)) return Forbid();
+        if (file.Length == 0) return BadRequest(new { message = "文件不能为空" });
+
+        var extension = Path.GetExtension(file.FileName);
+        if (!SupportedDocumentExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+            return BadRequest(new { message = $"不支持的文件格式：{extension}。支持 TXT、Markdown、HTML、PDF、DOC、DOCX、XLS、XLSX、CSV。" });
+
+        await using var stream = file.OpenReadStream();
+        try
+        {
+            return Ok(await service.ImportDocumentAsync(knowledgeBaseId, parentId, file.FileName, stream, ct));
+        }
+        catch (NotSupportedException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidDataException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex) when (ex is IOException or FormatException)
+        {
+            return BadRequest(new { message = $"文档解析失败：{ex.Message}" });
+        }
+    }
+
+    /// <summary>导入单篇 Markdown 文档。保留旧接口用于兼容已有前端和外部调用。</summary>
     [HttpPost("knowledge-bases/{knowledgeBaseId:guid}/markdown")]
     [RequestSizeLimit(20 * 1024 * 1024)]
     public async Task<ActionResult<ImportMarkdownResultDto>> ImportMarkdown(Guid knowledgeBaseId, [FromQuery] Guid? parentId, IFormFile file, CancellationToken ct)
@@ -40,7 +104,7 @@ public sealed class ContentExchangeController(IContentExchangeService service, I
         return Ok(await service.ImportMarkdownAsync(knowledgeBaseId, parentId, file.FileName, await reader.ReadToEndAsync(ct), ct));
     }
 
-    /// <summary>导入单篇 HTML 文档，并转换为 Markdown。</summary>
+    /// <summary>导入单篇 HTML 文档，并转换为 Markdown。保留兼容接口。</summary>
     [HttpPost("knowledge-bases/{knowledgeBaseId:guid}/html")]
     [RequestSizeLimit(20 * 1024 * 1024)]
     public async Task<ActionResult<ImportMarkdownResultDto>> ImportHtml(Guid knowledgeBaseId, [FromQuery] Guid? parentId, IFormFile file, CancellationToken ct)
@@ -55,7 +119,7 @@ public sealed class ContentExchangeController(IContentExchangeService service, I
         return Ok(await service.ImportHtmlAsync(knowledgeBaseId, parentId, file.FileName, await reader.ReadToEndAsync(ct), ct));
     }
 
-    /// <summary>导入 DOCX 文档，提取文本和标题层级后转换为 Markdown。</summary>
+    /// <summary>导入 DOCX 文档，提取文本和标题层级后转换为 Markdown。保留兼容接口。</summary>
     [HttpPost("knowledge-bases/{knowledgeBaseId:guid}/docx")]
     [RequestSizeLimit(50 * 1024 * 1024)]
     public async Task<ActionResult<ImportMarkdownResultDto>> ImportDocx(Guid knowledgeBaseId, [FromQuery] Guid? parentId, IFormFile file, CancellationToken ct)
