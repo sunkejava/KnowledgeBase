@@ -73,7 +73,7 @@ async function logout() {
         <router-link active-class="route-active-disabled" v-if="isSuperAdmin" to="/search-management" :class="{ 'nav-active': isNavActive('/search-management') }"><FileSearch :size="18"/>{{t('searchManagement')}}</router-link>
         <router-link active-class="route-active-disabled" v-if="canOpenSystem" to="/system" :class="{ 'nav-active': isNavActive('/system') }"><Settings :size="18"/>{{t('system')}}</router-link>
       </nav>
-      <div class="sidebar-footer">v0.14.2 · .NET 10 / Vue 3</div>
+      <div class="sidebar-footer">v0.14.3 · .NET 10 / Vue 3</div>
     </aside>
     <main class="main">
       <header class="topbar">
