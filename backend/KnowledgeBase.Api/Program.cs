@@ -1,4 +1,5 @@
 using System.Text;
+using KnowledgeBase.Api.BackgroundServices;
 using KnowledgeBase.Api.Middleware;
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Infrastructure.Persistence;
@@ -24,6 +25,8 @@ builder.Services.AddScoped<IAttachmentService, AttachmentService>();
 builder.Services.AddScoped<IContentExchangeService, ContentExchangeService>();
 builder.Services.AddScoped<IShareService, ShareService>();
 builder.Services.AddScoped<IAccessControlService, AccessControlService>();
+builder.Services.AddScoped<IExportTaskService, ExportTaskService>();
+builder.Services.AddHostedService<ExportTaskWorker>();
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key 未配置");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -47,7 +50,7 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<KnowledgeDbContext>();
-    // v0.6 起正式由 EF Core Migration 管理数据库升级。基线迁移兼容历史 EnsureCreated 数据库。
+    // 数据库结构统一由 EF Core Migration 管理，升级前请先备份生产数据库。
     await db.Database.MigrateAsync();
     await scope.ServiceProvider.GetRequiredService<IAuthService>().EnsureDefaultAdminAsync(CancellationToken.None);
 }
@@ -58,10 +61,5 @@ app.UseAuthorization();
 app.UseMiddleware<AuditMiddleware>();
 app.MapOpenApi();
 app.MapControllers();
-app.MapGet("/api/health", () => Results.Ok(new
-{
-    status = "ok",
-    service = "KnowledgeBase.Api",
-    time = DateTimeOffset.UtcNow
-}));
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok", service = "KnowledgeBase.Api", time = DateTimeOffset.UtcNow }));
 app.Run();

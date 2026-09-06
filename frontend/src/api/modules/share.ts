@@ -1,5 +1,5 @@
 import { publicHttp } from '../http'
 
 export const shareApi = {
-  publicDocument: (token: string) => publicHttp.get(`/share/public/${token}`)
+  publicDocument: (token: string, password: string | null = null) => publicHttp.post(`/share/public/${token}/access`, { password })
 }
