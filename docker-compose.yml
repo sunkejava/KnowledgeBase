@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
 
   meilisearch:
-    image: getmeili/meilisearch:v1.20
+    image: getmeili/meilisearch:v1.53.1
     profiles: ["search"]
     environment:
       MEILI_ENV: production
