@@ -3,11 +3,15 @@ using KnowledgeBase.Contracts.Documents;
 using KnowledgeBase.Domain.Entities;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace KnowledgeBase.Infrastructure.Services;
 
 /// <summary>文档读写服务。目录列表与正文分开查询，避免加载全部 Markdown。</summary>
-public sealed class DocumentService(KnowledgeDbContext dbContext) : IDocumentService
+public sealed class DocumentService(
+    KnowledgeDbContext dbContext,
+    IKnowledgeSearchService searchService,
+    ILogger<DocumentService> logger) : IDocumentService
 {
     public async Task<IReadOnlyList<DocumentListItemDto>> GetListAsync(Guid knowledgeBaseId, CancellationToken cancellationToken)
     {
@@ -34,6 +38,7 @@ public sealed class DocumentService(KnowledgeDbContext dbContext) : IDocumentSer
         dbContext.Documents.Add(doc);
         dbContext.DocumentContents.Add(new DocumentContent(doc.Id, request.Markdown));
         await dbContext.SaveChangesAsync(cancellationToken);
+        await TrySyncSearchIndexAsync(doc.Id, false, cancellationToken);
         return Map(doc, request.Markdown);
     }
 
@@ -45,6 +50,7 @@ public sealed class DocumentService(KnowledgeDbContext dbContext) : IDocumentSer
         var content = await dbContext.DocumentContents.FirstOrDefaultAsync(x => x.DocumentId == id, cancellationToken);
         if (content is null) dbContext.DocumentContents.Add(new DocumentContent(id, request.Markdown)); else content.Update(request.Markdown);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await TrySyncSearchIndexAsync(id, false, cancellationToken);
         return Map(doc, request.Markdown);
     }
 
@@ -54,7 +60,24 @@ public sealed class DocumentService(KnowledgeDbContext dbContext) : IDocumentSer
         if (doc is null) return false;
         dbContext.Documents.Remove(doc);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await TrySyncSearchIndexAsync(id, true, cancellationToken);
         return true;
+    }
+
+    /// <summary>
+    /// 搜索索引属于派生数据，外部搜索服务暂时不可用时不阻断文档主业务提交，只记录日志并允许管理员后续重建索引。
+    /// </summary>
+    private async Task TrySyncSearchIndexAsync(Guid documentId, bool deleted, CancellationToken ct)
+    {
+        try
+        {
+            if (deleted) await searchService.DeleteDocumentAsync(documentId, ct);
+            else await searchService.UpsertDocumentAsync(documentId, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "同步文档 {DocumentId} 到搜索引擎 {Provider} 失败，可在搜索管理页面执行全量重建", documentId, searchService.ProviderName);
+        }
     }
 
     private static DocumentDetailDto Map(Document x, string markdown)
