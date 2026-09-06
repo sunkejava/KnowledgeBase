@@ -69,6 +69,12 @@ public sealed class SqliteKnowledgeSearchService(KnowledgeDbContext db) : IKnowl
         return new PageResult<SearchResultDto>(items, total, query.NormalizedPage, query.NormalizedPageSize);
     }
 
+    /// <summary>SQLite 直接查询业务表，不维护外部索引，因此单文档更新无需额外操作。</summary>
+    public Task UpsertDocumentAsync(Guid documentId, CancellationToken ct) => Task.CompletedTask;
+
+    /// <summary>SQLite 直接查询业务表，不维护外部索引，因此单文档删除无需额外操作。</summary>
+    public Task DeleteDocumentAsync(Guid documentId, CancellationToken ct) => Task.CompletedTask;
+
     /// <summary>
     /// SQLite 实现直接读取业务表，不维护独立索引，因此无需执行重建动作。
     /// </summary>
