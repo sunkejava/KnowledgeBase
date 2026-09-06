@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BaseDataTable from '../components/common/BaseDataTable.vue'
+import PageHeader from '../components/common/PageHeader.vue'
 import type { TableColumn } from '../types/table'
 import { knowledgeApi } from '../api/modules/knowledge'
 
@@ -75,7 +76,10 @@ onMounted(load)
 
 <template>
   <section class="page">
-    <div class="page-head"><div><h1>我的知识库</h1><p>按业务边界管理团队知识、成员与权限。</p></div><el-button type="primary" @click="openCreate">创建知识库</el-button></div>
+    <PageHeader title="我的知识库" description="按业务边界管理团队知识、成员与权限。">
+      <template #actions><el-button type="primary" @click="openCreate">创建知识库</el-button></template>
+    </PageHeader>
+
     <BaseDataTable
       :rows="filteredItems"
       :columns="columns"
