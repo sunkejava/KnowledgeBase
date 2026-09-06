@@ -2,6 +2,7 @@ using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Contracts.Common;
 using KnowledgeBase.Contracts.Knowledge;
 using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Infrastructure.Common;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -29,18 +30,14 @@ public sealed class SearchIndexTaskService(
         return Map(entity);
     }
 
-    /// <summary>分页获取索引任务历史。</summary>
-    public async Task<PageResult<SearchIndexTaskDto>> GetPageAsync(int page, int pageSize, CancellationToken ct)
+    /// <summary>分页获取索引任务历史。SQLite 下 CreatedAt 使用统一安全排序分页。</summary>
+    public Task<PageResult<SearchIndexTaskDto>> GetPageAsync(int page, int pageSize, CancellationToken ct)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var query = db.SearchIndexTasks.AsNoTracking();
-        var total = await query.LongCountAsync(ct);
-        var rows = await query.OrderByDescending(x => x.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(ct);
-        return new PageResult<SearchIndexTaskDto>(rows.Select(Map).ToList(), total, page, pageSize);
+        return db.SearchIndexTasks.AsNoTracking()
+            .Select(x => new SearchIndexTaskDto(x.Id, x.Provider, x.Status, x.ErrorMessage, x.CreatedAt, x.StartedAt, x.CompletedAt))
+            .ToSqliteSafeDateTimeOffsetPageAsync(x => x.CreatedAt, descending: true, page, pageSize, ct);
     }
 
     /// <summary>重试失败的索引任务。</summary>
@@ -66,12 +63,12 @@ public sealed class SearchIndexTaskService(
         return rows.Count;
     }
 
-    /// <summary>领取并执行下一个待处理索引任务。</summary>
+    /// <summary>领取并执行下一个待处理索引任务。SQLite 下先过滤 Pending，再在内存按 CreatedAt 排序。</summary>
     public async Task ProcessNextPendingAsync(CancellationToken ct)
     {
         var entity = await db.SearchIndexTasks
-            .OrderBy(x => x.CreatedAt)
-            .FirstOrDefaultAsync(x => x.Status == "Pending", ct);
+            .Where(x => x.Status == "Pending")
+            .FirstOrDefaultSqliteSafeDateTimeOffsetAsync(x => x.CreatedAt, descending: false, ct);
         if (entity is null) return;
 
         entity.Start();
