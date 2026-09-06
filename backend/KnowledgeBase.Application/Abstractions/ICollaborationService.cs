@@ -11,6 +11,9 @@ public interface ICollaborationService
     /// <summary>分页获取文档评论。</summary>
     Task<PageResult<DocumentCommentDto>> GetCommentsAsync(Guid documentId, PageQuery query, CancellationToken ct);
 
+    /// <summary>获取当前文档所在知识库的可 @成员候选。</summary>
+    Task<IReadOnlyList<MentionUserDto>> GetMentionUsersAsync(Guid documentId, string? keyword, int take, CancellationToken ct);
+
     /// <summary>创建评论并为被 @ 的用户生成通知。</summary>
     Task<DocumentCommentDto> CreateCommentAsync(Guid documentId, Guid userId, CreateCommentRequest request, CancellationToken ct);
 
