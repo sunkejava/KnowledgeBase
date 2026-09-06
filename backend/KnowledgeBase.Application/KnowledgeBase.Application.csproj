@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../KnowledgeBase.Domain/KnowledgeBase.Domain.csproj" />
+    <ProjectReference Include="../KnowledgeBase.Contracts/KnowledgeBase.Contracts.csproj" />
+  </ItemGroup>
+</Project>

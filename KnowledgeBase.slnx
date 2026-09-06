@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/KnowledgeBase.Api/KnowledgeBase.Api.csproj" />
+    <Project Path="backend/KnowledgeBase.Application/KnowledgeBase.Application.csproj" />
+    <Project Path="backend/KnowledgeBase.Domain/KnowledgeBase.Domain.csproj" />
+    <Project Path="backend/KnowledgeBase.Infrastructure/KnowledgeBase.Infrastructure.csproj" />
+    <Project Path="backend/KnowledgeBase.Contracts/KnowledgeBase.Contracts.csproj" />
+  </Folder>
+</Solution>

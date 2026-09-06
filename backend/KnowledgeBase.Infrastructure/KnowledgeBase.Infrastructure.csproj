@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../KnowledgeBase.Application/KnowledgeBase.Application.csproj" />
+    <ProjectReference Include="../KnowledgeBase.Domain/KnowledgeBase.Domain.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0-preview.7.25380.108" />
+  </ItemGroup>
+</Project>

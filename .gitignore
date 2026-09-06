@@ -1,0 +1,22 @@
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+
+# Vue
+**/node_modules/
+**/dist/
+.env.local
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# Runtime
+storage/
+*.db
+*.db-shm
+*.db-wal
+logs/
