@@ -11,6 +11,13 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<KnowledgeBaseSpace> KnowledgeBases => Set<KnowledgeBaseSpace>();
     public DbSet<UserAppearanceSetting> UserAppearanceSettings => Set<UserAppearanceSetting>();
+    public DbSet<SysUser> Users => Set<SysUser>();
+    public DbSet<SysRole> Roles => Set<SysRole>();
+    public DbSet<SysUserRole> UserRoles => Set<SysUserRole>();
+    public DbSet<SysDepartment> Departments => Set<SysDepartment>();
+    public DbSet<SysOrganization> Organizations => Set<SysOrganization>();
+    public DbSet<SysMenu> Menus => Set<SysMenu>();
+    public DbSet<SysRoleMenu> RoleMenus => Set<SysRoleMenu>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,6 +46,55 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             entity.Property(x => x.Theme).HasMaxLength(20);
             entity.Property(x => x.Locale).HasMaxLength(20);
             entity.Property(x => x.WatermarkText).HasMaxLength(40);
+        });
+
+        modelBuilder.Entity<SysUser>(entity =>
+        {
+            entity.ToTable("Sys_User");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.UserName).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.DisplayName).HasMaxLength(80).IsRequired();
+            entity.HasIndex(x => x.UserName).IsUnique();
+        });
+        modelBuilder.Entity<SysRole>(entity =>
+        {
+            entity.ToTable("Sys_Role");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(80).IsRequired();
+            entity.HasIndex(x => x.Code).IsUnique();
+        });
+        modelBuilder.Entity<SysUserRole>(entity =>
+        {
+            entity.ToTable("Sys_UserRole");
+            entity.HasKey(x => new { x.UserId, x.RoleId });
+        });
+        modelBuilder.Entity<SysDepartment>(entity =>
+        {
+            entity.ToTable("Sys_Department");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+        });
+        modelBuilder.Entity<SysOrganization>(entity =>
+        {
+            entity.ToTable("Sys_Organization");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Code).HasMaxLength(60).IsRequired();
+            entity.HasIndex(x => x.Code).IsUnique();
+        });
+        modelBuilder.Entity<SysMenu>(entity =>
+        {
+            entity.ToTable("Sys_Menu");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Path).HasMaxLength(200);
+            entity.Property(x => x.Permission).HasMaxLength(120);
+        });
+        modelBuilder.Entity<SysRoleMenu>(entity =>
+        {
+            entity.ToTable("Sys_RoleMenu");
+            entity.HasKey(x => new { x.RoleId, x.MenuId });
         });
     }
 }
