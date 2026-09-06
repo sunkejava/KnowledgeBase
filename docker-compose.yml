@@ -3,19 +3,45 @@ services:
     build:
       context: ./backend
       dockerfile: KnowledgeBase.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: Data Source=/app/data/knowledgebase.db
+      Search__Provider: ${SEARCH_PROVIDER:-sqlite}
+      Search__Meilisearch__Endpoint: ${MEILISEARCH_ENDPOINT:-http://meilisearch:7700}
+      Search__Meilisearch__ApiKey: ${MEILISEARCH_API_KEY:-}
+      Search__Meilisearch__IndexName: ${MEILISEARCH_INDEX_NAME:-knowledge_documents}
+      Jwt__Key: ${JWT_KEY:-KnowledgeBase-Development-Key-Change-In-Production-2026}
     ports:
       - "5000:8080"
     volumes:
       - kb-data:/app/data
+      - kb-storage:/app/storage
+    restart: unless-stopped
+
   web:
-    image: node:22-alpine
-    working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
-    volumes:
-      - ./frontend:/app
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:5000/api}
     ports:
-      - "5173:5173"
+      - "5173:80"
     depends_on:
       - api
+    restart: unless-stopped
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.20
+    profiles: ["search"]
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY:-KnowledgeBase-Meili-Development-Key-Change-In-Production}
+    ports:
+      - "7700:7700"
+    volumes:
+      - meili-data:/meili_data
+    restart: unless-stopped
+
 volumes:
   kb-data:
+  kb-storage:
+  meili-data:
