@@ -149,7 +149,7 @@ public sealed class ContentExchangeService(KnowledgeDbContext db, IDocumentServi
         text = Regex.Replace(text, "<h2[^>]*>([\\s\\S]*?)</h2>", "## $1\n\n", RegexOptions.IgnoreCase);
         text = Regex.Replace(text, "<h3[^>]*>([\\s\\S]*?)</h3>", "### $1\n\n", RegexOptions.IgnoreCase);
         text = Regex.Replace(text, "<li[^>]*>([\\s\\S]*?)</li>", "- $1\n", RegexOptions.IgnoreCase);
-        text = Regex.Replace(text, "<(br|/p|/div|/section)>\s*", "\n\n", RegexOptions.IgnoreCase);
+        text = Regex.Replace(text, @"<(br|/p|/div|/section)>\s*", "\n\n", RegexOptions.IgnoreCase);
         text = Regex.Replace(text, "<[^>]+>", string.Empty);
         text = WebUtility.HtmlDecode(text);
         text = Regex.Replace(text, "[ \\t]+\\n", "\n");
