@@ -60,6 +60,11 @@ async function searchUsers() {
   users.value = (await accessApi.users(props.knowledgeBaseId, userKeyword.value, 50)).data
 }
 
+function onUserSearch(value: string) {
+  userKeyword.value = value
+  void searchUsers()
+}
+
 async function openMemberDialog(row?: any) {
   await searchUsers()
   memberForm.value = row ? { userId: row.userId, role: row.role } : { userId: '', role: 'Viewer' }
@@ -162,7 +167,7 @@ onMounted(() => { if (visible.value) load() })
     <el-dialog v-model="memberDialog" title="知识库成员权限" width="520px" append-to-body>
       <el-form label-position="top">
         <el-form-item label="用户">
-          <el-select v-model="memberForm.userId" filterable remote :remote-method="value => { userKeyword=value; searchUsers() }" style="width:100%">
+          <el-select v-model="memberForm.userId" filterable remote :remote-method="onUserSearch" style="width:100%">
             <el-option v-for="item in users" :key="item.id" :label="`${item.displayName} (${item.userName})`" :value="item.id" />
           </el-select>
         </el-form-item>
@@ -180,7 +185,7 @@ onMounted(() => { if (visible.value) load() })
     <el-dialog v-model="permissionDialog" title="文档显式权限" width="520px" append-to-body>
       <el-form label-position="top">
         <el-form-item label="用户">
-          <el-select v-model="permissionForm.userId" filterable remote :remote-method="value => { userKeyword=value; searchUsers() }" style="width:100%">
+          <el-select v-model="permissionForm.userId" filterable remote :remote-method="onUserSearch" style="width:100%">
             <el-option v-for="item in users" :key="item.id" :label="`${item.displayName} (${item.userName})`" :value="item.id" />
           </el-select>
         </el-form-item>
