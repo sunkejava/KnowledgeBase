@@ -153,6 +153,7 @@ onMounted(load)
       :loading="loading"
       :storage-key="`system-${tab}`"
       :export-file-name="`KnowledgeBase-${tab}`"
+      :show-actions="tab==='users'||tab==='roles'"
       :action-width="170"
       @refresh="load"
     >
@@ -161,10 +162,12 @@ onMounted(load)
         <el-button v-if="tab==='users'" type="primary" @click="addUser">新增用户</el-button>
         <el-button v-if="tab==='roles'" type="primary" @click="addRole">新增角色</el-button>
       </template>
-      <template v-if="tab==='users'||tab==='roles'" #actions="{ row }">
-        <el-button v-if="tab==='users'" link type="primary" @click="editUser(row)">编辑</el-button>
-        <el-button v-else link type="primary" @click="editRole(row)">编辑</el-button>
-        <el-button link type="danger" @click="remove(row)">删除</el-button>
+      <template #actions="{ row }">
+        <template v-if="tab==='users'||tab==='roles'">
+          <el-button v-if="tab==='users'" link type="primary" @click="editUser(row)">编辑</el-button>
+          <el-button v-else link type="primary" @click="editRole(row)">编辑</el-button>
+          <el-button link type="danger" @click="remove(row)">删除</el-button>
+        </template>
       </template>
     </BaseDataTable>
 
