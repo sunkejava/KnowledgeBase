@@ -2,7 +2,7 @@ using KnowledgeBase.Contracts.Knowledge;
 
 namespace KnowledgeBase.Application.Abstractions;
 
-/// <summary>Markdown、HTML、DOCX、ZIP 导入导出与版本差异服务。</summary>
+/// <summary>常见文档、Markdown、HTML、Office、PDF、ZIP 导入导出与版本差异服务。</summary>
 public interface IContentExchangeService
 {
     /// <summary>导出单篇 Markdown 文档。</summary>
@@ -16,6 +16,17 @@ public interface IContentExchangeService
 
     /// <summary>导入 DOCX 文档，并提取段落、标题层级后转换为 Markdown。</summary>
     Task<ImportMarkdownResultDto> ImportDocxAsync(Guid knowledgeBaseId, Guid? parentId, string fileName, Stream docxStream, CancellationToken ct);
+
+    /// <summary>
+    /// 统一导入常见文档格式。
+    /// 当前支持 TXT、Markdown、HTML、PDF、DOC、DOCX、XLS、XLSX、CSV。
+    /// </summary>
+    Task<ImportMarkdownResultDto> ImportDocumentAsync(
+        Guid knowledgeBaseId,
+        Guid? parentId,
+        string fileName,
+        Stream fileStream,
+        CancellationToken ct);
 
     /// <summary>
     /// 导入 Markdown ZIP。ZIP 目录会按文档路径恢复父子关系；进度回调可用于异步导入任务。
