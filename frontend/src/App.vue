@@ -59,19 +59,19 @@ async function logout() {
     <aside class="sidebar">
       <div class="brand"><div class="brand-mark">K</div><div><strong>KnowledgeBase</strong><span>Knowledge Asset Platform</span></div></div>
       <nav>
-        <router-link to="/" :class="{ 'nav-active': isNavActive('/') }"><LayoutDashboard :size="18"/>{{t('dashboard')}}</router-link>
+        <router-link active-class="route-active-disabled" to="/" :class="{ 'nav-active': isNavActive('/') }"><LayoutDashboard :size="18"/>{{t('dashboard')}}</router-link>
         <div class="nav-title">{{t('knowledgeAssets')}}</div>
-        <router-link to="/knowledge-bases" :class="{ 'nav-active': isNavActive('/knowledge-bases') }"><Boxes :size="18"/>{{t('myKnowledgeBases')}}</router-link>
-        <router-link :to="{path:'/knowledge-center',query:{tab:'search'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','search') }"><FileText :size="18"/>{{t('allDocuments')}}</router-link>
-        <router-link :to="{path:'/knowledge-center',query:{tab:'recent'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','recent') }"><Clock3 :size="18"/>{{t('recent')}}</router-link>
-        <router-link :to="{path:'/knowledge-center',query:{tab:'favorites'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','favorites') }"><Star :size="18"/>{{t('favorites')}}</router-link>
-        <router-link to="/collaboration" :class="{ 'nav-active': isNavActive('/collaboration') }"><MessageSquareText :size="18"/>{{t('collaboration')}}</router-link>
+        <router-link active-class="route-active-disabled" to="/knowledge-bases" :class="{ 'nav-active': isNavActive('/knowledge-bases') }"><Boxes :size="18"/>{{t('myKnowledgeBases')}}</router-link>
+        <router-link active-class="route-active-disabled" :to="{path:'/knowledge-center',query:{tab:'search'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','search') }"><FileText :size="18"/>{{t('allDocuments')}}</router-link>
+        <router-link active-class="route-active-disabled" :to="{path:'/knowledge-center',query:{tab:'recent'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','recent') }"><Clock3 :size="18"/>{{t('recent')}}</router-link>
+        <router-link active-class="route-active-disabled" :to="{path:'/knowledge-center',query:{tab:'favorites'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','favorites') }"><Star :size="18"/>{{t('favorites')}}</router-link>
+        <router-link active-class="route-active-disabled" to="/collaboration" :class="{ 'nav-active': isNavActive('/collaboration') }"><MessageSquareText :size="18"/>{{t('collaboration')}}</router-link>
         <div class="nav-title">{{t('platform')}}</div>
-        <router-link :to="{path:'/knowledge-center',query:{tab:'tags'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','tags') }"><BookOpen :size="18"/>{{t('content')}}</router-link>
-        <router-link to="/notifications" :class="{ 'nav-active': isNavActive('/notifications') }"><Bell :size="18"/>{{t('notifications')}}<span v-if="notifications.unreadCount" style="margin-left:auto;font-size:11px">{{notifications.unreadCount > 99 ? '99+' : notifications.unreadCount}}</span></router-link>
-        <router-link to="/data-exchange" :class="{ 'nav-active': isNavActive('/data-exchange') }"><Download :size="18"/>{{t('dataExchange')}}</router-link>
-        <router-link v-if="isSuperAdmin" to="/search-management" :class="{ 'nav-active': isNavActive('/search-management') }"><FileSearch :size="18"/>{{t('searchManagement')}}</router-link>
-        <router-link v-if="canOpenSystem" to="/system" :class="{ 'nav-active': isNavActive('/system') }"><Settings :size="18"/>{{t('system')}}</router-link>
+        <router-link active-class="route-active-disabled" :to="{path:'/knowledge-center',query:{tab:'tags'}}" :class="{ 'nav-active': isNavActive('/knowledge-center','tags') }"><BookOpen :size="18"/>{{t('content')}}</router-link>
+        <router-link active-class="route-active-disabled" to="/notifications" :class="{ 'nav-active': isNavActive('/notifications') }"><Bell :size="18"/>{{t('notifications')}}<span v-if="notifications.unreadCount" style="margin-left:auto;font-size:11px">{{notifications.unreadCount > 99 ? '99+' : notifications.unreadCount}}</span></router-link>
+        <router-link active-class="route-active-disabled" to="/data-exchange" :class="{ 'nav-active': isNavActive('/data-exchange') }"><Download :size="18"/>{{t('dataExchange')}}</router-link>
+        <router-link active-class="route-active-disabled" v-if="isSuperAdmin" to="/search-management" :class="{ 'nav-active': isNavActive('/search-management') }"><FileSearch :size="18"/>{{t('searchManagement')}}</router-link>
+        <router-link active-class="route-active-disabled" v-if="canOpenSystem" to="/system" :class="{ 'nav-active': isNavActive('/system') }"><Settings :size="18"/>{{t('system')}}</router-link>
       </nav>
       <div class="sidebar-footer">v0.14.2 · .NET 10 / Vue 3</div>
     </aside>
