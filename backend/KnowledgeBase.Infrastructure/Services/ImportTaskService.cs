@@ -2,6 +2,7 @@ using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Contracts.Common;
 using KnowledgeBase.Contracts.Knowledge;
 using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Infrastructure.Common;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -31,21 +32,18 @@ public sealed class ImportTaskService(
         return Map(entity);
     }
 
-    public async Task<PageResult<ImportTaskDto>> GetPageAsync(Guid userId, int page, int pageSize, CancellationToken ct)
+    /// <summary>分页获取当前用户导入任务。SQLite 下 CreatedAt 排序使用统一安全分页扩展。</summary>
+    public Task<PageResult<ImportTaskDto>> GetPageAsync(Guid userId, int page, int pageSize, CancellationToken ct)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var query = db.ImportTasks.AsNoTracking().Where(x => x.UserId == userId);
-        var total = await query.LongCountAsync(ct);
-        var items = await query.OrderByDescending(x => x.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        return db.ImportTasks.AsNoTracking()
+            .Where(x => x.UserId == userId)
             .Select(x => new ImportTaskDto(
                 x.Id, x.KnowledgeBaseId, x.Name, x.SourceType, x.Status, x.SourceFileName,
                 x.TotalCount, x.ProcessedCount, x.ImportedCount, x.SkippedCount,
                 x.ErrorMessage, x.CreatedAt, x.StartedAt, x.CompletedAt))
-            .ToListAsync(ct);
-        return new(items, total, page, pageSize);
+            .ToSqliteSafeDateTimeOffsetPageAsync(x => x.CreatedAt, descending: true, page, pageSize, ct);
     }
 
     /// <summary>取消尚未开始的导入任务。</summary>
@@ -87,10 +85,12 @@ public sealed class ImportTaskService(
         return rows.Count;
     }
 
-    /// <summary>处理队列中最早的待执行任务。</summary>
+    /// <summary>处理队列中最早的待执行任务。SQLite 下先过滤 Pending，再在内存中按 CreatedAt 排序。</summary>
     public async Task ProcessNextPendingAsync(CancellationToken ct)
     {
-        var task = await db.ImportTasks.OrderBy(x => x.CreatedAt).FirstOrDefaultAsync(x => x.Status == "Pending", ct);
+        var task = await db.ImportTasks
+            .Where(x => x.Status == "Pending")
+            .FirstOrDefaultSqliteSafeDateTimeOffsetAsync(x => x.CreatedAt, descending: false, ct);
         if (task is null) return;
 
         task.Start();
