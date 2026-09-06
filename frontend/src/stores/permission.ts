@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { http } from '../api/http'
+import { authApi } from '../api/modules/auth'
 
 export const usePermissionStore = defineStore('permission', () => {
   const roles = ref<string[]>([])
@@ -8,7 +8,7 @@ export const usePermissionStore = defineStore('permission', () => {
   const menus = ref<any[]>([])
 
   async function load() {
-    const { data } = await http.get('/system/profile')
+    const { data } = await authApi.permissionProfile()
     roles.value = data.roles
     permissions.value = data.permissions
     menus.value = data.menus
