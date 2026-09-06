@@ -1,6 +1,7 @@
 using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Contracts.Documents;
 using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Infrastructure.Common;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -13,13 +14,15 @@ public sealed class DocumentService(
     IKnowledgeSearchService searchService,
     ILogger<DocumentService> logger) : IDocumentService
 {
+    /// <summary>
+    /// 获取文档目录元数据。SQLite 不直接对 DateTimeOffset 执行 ORDER BY，统一使用安全排序扩展。
+    /// </summary>
     public async Task<IReadOnlyList<DocumentListItemDto>> GetListAsync(Guid knowledgeBaseId, CancellationToken cancellationToken)
     {
         var rows = await dbContext.Documents.AsNoTracking()
             .Where(x => x.KnowledgeBaseId == knowledgeBaseId)
-            .OrderBy(x => x.CreatedAt)
-            .Select(x => new { x.Id, x.ParentId, x.Title, x.Status, x.UpdatedAt })
-            .ToListAsync(cancellationToken);
+            .Select(x => new { x.Id, x.ParentId, x.Title, x.Status, x.CreatedAt, x.UpdatedAt })
+            .ToSqliteSafeDateTimeOffsetListAsync(x => x.CreatedAt, descending: false, cancellationToken);
 
         return rows.Select(x => new DocumentListItemDto(x.Id, x.ParentId, x.Title, x.Status.ToString(), x.UpdatedAt)).ToList();
     }
