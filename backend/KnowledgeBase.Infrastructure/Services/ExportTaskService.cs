@@ -4,6 +4,7 @@ using KnowledgeBase.Application.Abstractions;
 using KnowledgeBase.Contracts.Common;
 using KnowledgeBase.Contracts.Knowledge;
 using KnowledgeBase.Domain.Entities;
+using KnowledgeBase.Infrastructure.Common;
 using KnowledgeBase.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -26,18 +27,15 @@ public sealed class ExportTaskService(KnowledgeDbContext db, IFileStorage storag
         return Map(entity);
     }
 
-    public async Task<PageResult<ExportTaskDto>> GetPageAsync(Guid userId, int page, int pageSize, CancellationToken ct)
+    /// <summary>分页获取导出任务。SQLite 下 CreatedAt 排序使用统一安全分页扩展。</summary>
+    public Task<PageResult<ExportTaskDto>> GetPageAsync(Guid userId, int page, int pageSize, CancellationToken ct)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var query = db.ExportTasks.AsNoTracking().Where(x => x.UserId == userId);
-        var total = await query.LongCountAsync(ct);
-        var items = await query.OrderByDescending(x => x.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        return db.ExportTasks.AsNoTracking()
+            .Where(x => x.UserId == userId)
             .Select(x => new ExportTaskDto(x.Id, x.KnowledgeBaseId, x.Name, x.Format, x.Status, x.FileName, x.ErrorMessage, x.CreatedAt, x.StartedAt, x.CompletedAt))
-            .ToListAsync(ct);
-        return new(items, total, page, pageSize);
+            .ToSqliteSafeDateTimeOffsetPageAsync(x => x.CreatedAt, descending: true, page, pageSize, ct);
     }
 
     /// <summary>打开已完成导出任务的文件流。</summary>
@@ -85,9 +83,14 @@ public sealed class ExportTaskService(KnowledgeDbContext db, IFileStorage storag
         return rows.Count;
     }
 
+    /// <summary>
+    /// 获取最早的待执行任务。SQLite 不直接按 DateTimeOffset 排序，先过滤 Pending 后在内存中安全排序。
+    /// </summary>
     public async Task ProcessNextPendingAsync(CancellationToken ct)
     {
-        var task = await db.ExportTasks.OrderBy(x => x.CreatedAt).FirstOrDefaultAsync(x => x.Status == "Pending", ct);
+        var task = await db.ExportTasks
+            .Where(x => x.Status == "Pending")
+            .FirstOrDefaultSqliteSafeDateTimeOffsetAsync(x => x.CreatedAt, descending: false, ct);
         if (task is null) return;
 
         task.Start();
