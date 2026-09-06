@@ -19,6 +19,12 @@ public interface IKnowledgeSearchService
         PageQuery query,
         CancellationToken ct);
 
+    /// <summary>新增或更新单篇文档索引。</summary>
+    Task UpsertDocumentAsync(Guid documentId, CancellationToken ct);
+
+    /// <summary>删除单篇文档索引。</summary>
+    Task DeleteDocumentAsync(Guid documentId, CancellationToken ct);
+
     /// <summary>
     /// 重建全文索引。SQLite 实现无需外部索引，调用时直接返回完成；外部搜索引擎实现负责重新写入索引。
     /// </summary>
