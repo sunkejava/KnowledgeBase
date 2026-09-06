@@ -68,10 +68,7 @@ public sealed class MeilisearchKnowledgeSearchService(
             q = keyword,
             offset = (query.NormalizedPage - 1) * query.NormalizedPageSize,
             limit = query.NormalizedPageSize,
-            filter = filters.Count == 0 ? null : string.Join(" AND ", filters),
-            attributesToHighlight = new[] { "title", "markdown" },
-            highlightPreTag = "<mark>",
-            highlightPostTag = "</mark>"
+            filter = filters.Count == 0 ? null : string.Join(" AND ", filters)
         };
 
         using var response = await client.PostAsJsonAsync($"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}/search", payload, ct);
@@ -97,6 +94,53 @@ public sealed class MeilisearchKnowledgeSearchService(
         }
 
         return new PageResult<SearchResultDto>(items, total, query.NormalizedPage, query.NormalizedPageSize);
+    }
+
+    /// <summary>新增或更新单篇文档索引。</summary>
+    public async Task UpsertDocumentAsync(Guid documentId, CancellationToken ct)
+    {
+        var raw = await (
+            from document in db.Documents.AsNoTracking()
+            join content in db.DocumentContents.AsNoTracking() on document.Id equals content.DocumentId
+            where document.Id == documentId
+            select new
+            {
+                document.Id,
+                document.KnowledgeBaseId,
+                document.Title,
+                content.Markdown,
+                document.UpdatedAt
+            }).FirstOrDefaultAsync(ct);
+
+        if (raw is null)
+        {
+            await DeleteDocumentAsync(documentId, ct);
+            return;
+        }
+
+        var payload = new[]
+        {
+            new
+            {
+                id = raw.Id.ToString("D"),
+                knowledgeBaseId = raw.KnowledgeBaseId.ToString("D"),
+                title = raw.Title,
+                markdown = raw.Markdown,
+                updatedAt = raw.UpdatedAt.ToString("O")
+            }
+        };
+
+        using var client = CreateClient();
+        await SendAndEnsureAsync(client, HttpMethod.Put,
+            $"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}/documents?primaryKey=id", payload, ct);
+    }
+
+    /// <summary>删除单篇文档索引。</summary>
+    public async Task DeleteDocumentAsync(Guid documentId, CancellationToken ct)
+    {
+        using var client = CreateClient();
+        await SendAndEnsureAsync(client, HttpMethod.Delete,
+            $"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}/documents/{documentId:D}", null, ct, allowNotFound: true);
     }
 
     /// <summary>
