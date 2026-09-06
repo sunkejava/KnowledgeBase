@@ -92,21 +92,23 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
             .ToListAsync(ct);
     }
 
-    /// <summary>创建评论，同时为被 @ 的用户生成站内通知。</summary>
+    /// <summary>创建评论，同时为被 @ 的知识库成员生成站内通知。</summary>
     public async Task<DocumentCommentDto> CreateCommentAsync(Guid documentId, Guid userId, CreateCommentRequest request, CancellationToken ct)
     {
+        var documentInfo = await db.Documents.AsNoTracking()
+            .Where(x => x.Id == documentId)
+            .Select(x => new { x.KnowledgeBaseId, x.Title })
+            .FirstOrDefaultAsync(ct)
+            ?? throw new KeyNotFoundException("文档不存在。 ");
+
         var comment = new DocumentComment(documentId, userId, request.Content, request.ParentId);
         db.DocumentComments.Add(comment);
-        var mentions = await ReplaceMentionsAsync(comment.Id, userId, request.MentionUserIds, ct);
+        var mentions = await ReplaceMentionsAsync(comment.Id, documentId, userId, request.MentionUserIds, ct);
 
         var author = await db.Users.AsNoTracking()
             .Where(x => x.Id == userId)
             .Select(x => new { x.UserName, x.DisplayName })
             .FirstOrDefaultAsync(ct);
-        var documentTitle = await db.Documents.AsNoTracking()
-            .Where(x => x.Id == documentId)
-            .Select(x => x.Title)
-            .FirstOrDefaultAsync(ct) ?? "文档";
 
         foreach (var mentionedUserId in mentions)
         {
@@ -114,8 +116,8 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
                 mentionedUserId,
                 "Mention",
                 $"{author?.DisplayName ?? author?.UserName ?? "用户"} 在评论中提到了你",
-                $"文档《{documentTitle}》：{BuildPreview(comment.Content)}",
-                $"/knowledge-center?documentId={documentId:D}"));
+                $"文档《{documentInfo.Title}》：{BuildPreview(comment.Content)}",
+                $"/knowledge-bases/{documentInfo.KnowledgeBaseId:D}?document={documentId:D}"));
         }
 
         await db.SaveChangesAsync(ct);
@@ -138,7 +140,7 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
         var comment = await db.DocumentComments.FirstOrDefaultAsync(x => x.Id == commentId, ct);
         if (comment is null || (!isSuperAdmin && comment.UserId != userId)) return null;
         comment.Update(request.Content);
-        var mentions = await ReplaceMentionsAsync(comment.Id, comment.UserId, request.MentionUserIds, ct);
+        var mentions = await ReplaceMentionsAsync(comment.Id, comment.DocumentId, comment.UserId, request.MentionUserIds, ct);
         await db.SaveChangesAsync(ct);
 
         var author = await db.Users.AsNoTracking()
@@ -163,7 +165,7 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
     {
         var comment = await db.DocumentComments.FirstOrDefaultAsync(x => x.Id == commentId, ct);
         if (comment is null || (!isSuperAdmin && comment.UserId != userId)) return false;
-        db.DocumentCommentMentions.RemoveRange(db.DocumentCommentMentions.Where(x => x.CommentId == commentId));
+        await db.DocumentCommentMentions.Where(x => x.CommentId == commentId).ExecuteDeleteAsync(ct);
         db.DocumentComments.Remove(comment);
         await db.SaveChangesAsync(ct);
         return true;
@@ -203,17 +205,30 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
         return rows.Count;
     }
 
-    private async Task<IReadOnlyList<Guid>> ReplaceMentionsAsync(Guid commentId, Guid authorId, IReadOnlyList<Guid>? mentionUserIds, CancellationToken ct)
+    private async Task<IReadOnlyList<Guid>> ReplaceMentionsAsync(Guid commentId, Guid documentId, Guid authorId, IReadOnlyList<Guid>? mentionUserIds, CancellationToken ct)
     {
-        db.DocumentCommentMentions.RemoveRange(db.DocumentCommentMentions.Where(x => x.CommentId == commentId));
+        await db.DocumentCommentMentions.Where(x => x.CommentId == commentId).ExecuteDeleteAsync(ct);
         var requested = (mentionUserIds ?? []).Where(x => x != authorId).Distinct().Take(50).ToArray();
         if (requested.Length == 0) return [];
 
-        var valid = await db.Users.AsNoTracking()
-            .Where(x => requested.Contains(x.Id) && x.Enabled)
-            .Select(x => x.Id)
+        var knowledgeBaseId = await db.Documents.AsNoTracking()
+            .Where(x => x.Id == documentId)
+            .Select(x => (Guid?)x.KnowledgeBaseId)
+            .FirstOrDefaultAsync(ct);
+        if (!knowledgeBaseId.HasValue) return [];
+
+        var valid = await (
+            from member in db.KnowledgeBaseMembers.AsNoTracking()
+            join user in db.Users.AsNoTracking() on member.UserId equals user.Id
+            where member.KnowledgeBaseId == knowledgeBaseId.Value
+                  && requested.Contains(user.Id)
+                  && user.Enabled
+            select user.Id)
+            .Distinct()
             .ToListAsync(ct);
-        foreach (var userId in valid) db.DocumentCommentMentions.Add(new DocumentCommentMention(commentId, userId));
+
+        foreach (var mentionedUserId in valid)
+            db.DocumentCommentMentions.Add(new DocumentCommentMention(commentId, mentionedUserId));
         return valid;
     }
 
