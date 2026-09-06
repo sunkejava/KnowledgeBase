@@ -13,7 +13,7 @@ namespace KnowledgeBase.Infrastructure.Services;
 /// </summary>
 public sealed class CollaborationService(KnowledgeDbContext db) : ICollaborationService
 {
-    /// <summary>分页获取文档评论，并补充评论用户与 @成员信息。</summary>
+    /// <summary>分页获取文档评论，并补充评论用户与 @成员信息。SQLite 下 CreatedAt 排序使用统一安全分页扩展。</summary>
     public async Task<PageResult<DocumentCommentDto>> GetCommentsAsync(Guid documentId, PageQuery query, CancellationToken ct)
     {
         var source = db.DocumentComments.AsNoTracking().Where(x => x.DocumentId == documentId);
@@ -23,14 +23,16 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
             source = source.Where(x => x.Content.Contains(keyword));
         }
 
-        var total = await source.LongCountAsync(ct);
-        var comments = await source.OrderByDescending(x => x.CreatedAt)
-            .Skip((query.NormalizedPage - 1) * query.NormalizedPageSize)
-            .Take(query.NormalizedPageSize)
-            .ToListAsync(ct);
+        var page = await source.ToSqliteSafeDateTimeOffsetPageAsync(
+            x => x.CreatedAt,
+            descending: true,
+            query.NormalizedPage,
+            query.NormalizedPageSize,
+            ct);
+        var comments = page.Items.ToList();
 
         if (comments.Count == 0)
-            return new PageResult<DocumentCommentDto>([], total, query.NormalizedPage, query.NormalizedPageSize);
+            return new PageResult<DocumentCommentDto>([], page.Total, page.Page, page.PageSize);
 
         var userIds = comments.Select(x => x.UserId).Distinct().ToArray();
         var users = await db.Users.AsNoTracking()
@@ -61,7 +63,7 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
                 x.UpdatedAt);
         }).ToList();
 
-        return new PageResult<DocumentCommentDto>(items, total, query.NormalizedPage, query.NormalizedPageSize);
+        return new PageResult<DocumentCommentDto>(items, page.Total, page.Page, page.PageSize);
     }
 
     /// <summary>获取文档所在知识库的成员候选，只返回评论 @成员需要的最小用户信息。</summary>
@@ -74,7 +76,7 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
             .FirstOrDefaultAsync(ct);
         if (!knowledgeBaseId.HasValue) return [];
 
-        var query =
+        var userQuery =
             from member in db.KnowledgeBaseMembers.AsNoTracking()
             join user in db.Users.AsNoTracking() on member.UserId equals user.Id
             where member.KnowledgeBaseId == knowledgeBaseId.Value && user.Enabled
@@ -83,10 +85,10 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
         if (!string.IsNullOrWhiteSpace(keyword))
         {
             var value = keyword.Trim();
-            query = query.Where(x => x.UserName.Contains(value) || x.DisplayName.Contains(value));
+            userQuery = userQuery.Where(x => x.UserName.Contains(value) || x.DisplayName.Contains(value));
         }
 
-        return await query.OrderBy(x => x.UserName)
+        return await userQuery.OrderBy(x => x.UserName)
             .Take(take)
             .Select(x => new MentionUserDto(x.Id, x.UserName, x.DisplayName))
             .ToListAsync(ct);
@@ -99,7 +101,7 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
             .Where(x => x.Id == documentId)
             .Select(x => new { x.KnowledgeBaseId, x.Title })
             .FirstOrDefaultAsync(ct)
-            ?? throw new KeyNotFoundException("文档不存在。 ");
+            ?? throw new KeyNotFoundException("文档不存在。");
 
         var comment = new DocumentComment(documentId, userId, request.Content, request.ParentId);
         db.DocumentComments.Add(comment);
@@ -171,6 +173,7 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
         return true;
     }
 
+    /// <summary>分页获取当前用户通知。SQLite 下 CreatedAt 排序使用统一安全分页扩展。</summary>
     public Task<PageResult<NotificationDto>> GetNotificationsAsync(Guid userId, PageQuery query, CancellationToken ct)
     {
         var source = db.UserNotifications.AsNoTracking().Where(x => x.UserId == userId);
@@ -180,9 +183,14 @@ public sealed class CollaborationService(KnowledgeDbContext db) : ICollaboration
             source = source.Where(x => x.Title.Contains(keyword) || x.Content.Contains(keyword));
         }
 
-        return source.OrderByDescending(x => x.CreatedAt)
+        return source
             .Select(x => new NotificationDto(x.Id, x.Type, x.Title, x.Content, x.TargetUrl, x.IsRead, x.CreatedAt, x.ReadAt))
-            .ToPageResultAsync(query.NormalizedPage, query.NormalizedPageSize, ct);
+            .ToSqliteSafeDateTimeOffsetPageAsync(
+                x => x.CreatedAt,
+                descending: true,
+                query.NormalizedPage,
+                query.NormalizedPageSize,
+                ct);
     }
 
     public async Task<NotificationSummaryDto> GetNotificationSummaryAsync(Guid userId, CancellationToken ct)
