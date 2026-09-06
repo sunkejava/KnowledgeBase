@@ -9,7 +9,8 @@ using Microsoft.EntityFrameworkCore;
 namespace KnowledgeBase.Infrastructure.Services;
 
 /// <summary>
-/// 知识资产服务，负责标签、收藏、最近访问、版本与基础全文搜索。
+/// 知识资产服务，负责标签、收藏、最近访问和文档版本。
+/// 全文搜索已独立到 IKnowledgeSearchService，避免业务服务中重复维护搜索逻辑。
 /// </summary>
 public sealed class KnowledgeAssetService(KnowledgeDbContext db) : IKnowledgeAssetService
 {
@@ -204,73 +205,5 @@ public sealed class KnowledgeAssetService(KnowledgeDbContext db) : IKnowledgeAss
         content.Update(version.Markdown);
         await db.SaveChangesAsync(ct);
         return true;
-    }
-
-    /// <summary>
-    /// 基础全文搜索。超级管理员可检索全部知识库；普通用户仅检索自己作为成员可访问的知识库。
-    /// </summary>
-    public async Task<PageResult<SearchResultDto>> SearchPageAsync(
-        string keyword,
-        Guid userId,
-        bool isSuperAdmin,
-        Guid? knowledgeBaseId,
-        PageQuery query,
-        CancellationToken ct)
-    {
-        keyword = (keyword ?? string.Empty).Trim();
-        if (keyword.Length == 0)
-            return new PageResult<SearchResultDto>([], 0, query.NormalizedPage, query.NormalizedPageSize);
-
-        var source =
-            from document in db.Documents.AsNoTracking()
-            join content in db.DocumentContents.AsNoTracking() on document.Id equals content.DocumentId
-            where document.Title.Contains(keyword) || content.Markdown.Contains(keyword)
-            select new { document, content };
-
-        if (knowledgeBaseId.HasValue)
-            source = source.Where(x => x.document.KnowledgeBaseId == knowledgeBaseId.Value);
-
-        if (!isSuperAdmin)
-        {
-            source = source.Where(x => db.KnowledgeBaseMembers.Any(member =>
-                member.KnowledgeBaseId == x.document.KnowledgeBaseId && member.UserId == userId));
-        }
-
-        var total = await source.LongCountAsync(ct);
-        var rows = await source
-            .OrderByDescending(x => x.document.UpdatedAt)
-            .Skip((query.NormalizedPage - 1) * query.NormalizedPageSize)
-            .Take(query.NormalizedPageSize)
-            .Select(x => new
-            {
-                x.document.Id,
-                x.document.KnowledgeBaseId,
-                x.document.Title,
-                x.content.Markdown,
-                x.document.UpdatedAt
-            })
-            .ToListAsync(ct);
-
-        var items = rows
-            .Select(x => new SearchResultDto(
-                x.Id,
-                x.KnowledgeBaseId,
-                x.Title,
-                BuildSnippet(x.Markdown, keyword),
-                x.UpdatedAt))
-            .ToList();
-
-        return new PageResult<SearchResultDto>(items, total, query.NormalizedPage, query.NormalizedPageSize);
-    }
-
-    private static string BuildSnippet(string text, string keyword)
-    {
-        if (string.IsNullOrEmpty(text)) return string.Empty;
-        var index = text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
-        if (index < 0) return text[..Math.Min(text.Length, 180)];
-
-        var start = Math.Max(0, index - 70);
-        var length = Math.Min(text.Length - start, 180);
-        return text.Substring(start, length).Replace("\r", " ").Replace("\n", " ");
     }
 }
