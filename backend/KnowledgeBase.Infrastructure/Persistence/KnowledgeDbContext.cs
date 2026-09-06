@@ -10,6 +10,7 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
 {
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<KnowledgeBaseSpace> KnowledgeBases => Set<KnowledgeBaseSpace>();
+    public DbSet<UserAppearanceSetting> UserAppearanceSettings => Set<UserAppearanceSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -27,6 +28,17 @@ public sealed class KnowledgeDbContext(DbContextOptions<KnowledgeDbContext> opti
             entity.ToTable("Kb_KnowledgeBase");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+        });
+
+        modelBuilder.Entity<UserAppearanceSetting>(entity =>
+        {
+            entity.ToTable("Sys_UserAppearanceSetting");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.UserKey).HasMaxLength(100).IsRequired();
+            entity.HasIndex(x => x.UserKey).IsUnique();
+            entity.Property(x => x.Theme).HasMaxLength(20);
+            entity.Property(x => x.Locale).HasMaxLength(20);
+            entity.Property(x => x.WatermarkText).HasMaxLength(40);
         });
     }
 }
