@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -71,7 +72,7 @@ public sealed class MeilisearchKnowledgeSearchService(
             filter = filters.Count == 0 ? null : string.Join(" AND ", filters)
         };
 
-        using var response = await client.PostAsJsonAsync($"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}/search", payload, ct);
+        using var response = await client.PostAsJsonAsync($"{IndexUrl}/search", payload, ct);
         response.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(ct));
         var root = document.RootElement;
@@ -96,7 +97,7 @@ public sealed class MeilisearchKnowledgeSearchService(
         return new PageResult<SearchResultDto>(items, total, query.NormalizedPage, query.NormalizedPageSize);
     }
 
-    /// <summary>新增或更新单篇文档索引。</summary>
+    /// <summary>新增或更新单篇文档索引，并等待 Meilisearch 内部任务真正执行完成。</summary>
     public async Task UpsertDocumentAsync(Guid documentId, CancellationToken ct)
     {
         var raw = await (
@@ -131,20 +132,28 @@ public sealed class MeilisearchKnowledgeSearchService(
         };
 
         using var client = CreateClient();
-        await SendAndEnsureAsync(client, HttpMethod.Put,
-            $"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}/documents?primaryKey=id", payload, ct);
+        await EnsureIndexAsync(client, configureWhenCreated: true, ct);
+        var taskUid = await SendTaskAsync(client, HttpMethod.Put, $"{IndexUrl}/documents?primaryKey=id", payload, ct);
+        await WaitTaskAsync(client, taskUid, ct);
     }
 
-    /// <summary>删除单篇文档索引。</summary>
+    /// <summary>删除单篇文档索引，并等待 Meilisearch 内部删除任务完成。</summary>
     public async Task DeleteDocumentAsync(Guid documentId, CancellationToken ct)
     {
         using var client = CreateClient();
-        await SendAndEnsureAsync(client, HttpMethod.Delete,
-            $"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}/documents/{documentId:D}", null, ct, allowNotFound: true);
+        var taskUid = await SendTaskAsync(
+            client,
+            HttpMethod.Delete,
+            $"{IndexUrl}/documents/{documentId:D}",
+            null,
+            ct,
+            allowNotFound: true);
+        if (taskUid.HasValue) await WaitTaskAsync(client, taskUid.Value, ct);
     }
 
     /// <summary>
     /// 清空并重新写入全部文档索引，同时配置可检索字段和知识库过滤字段。
+    /// 每个 Meilisearch 异步任务都会等待到 succeeded，只有真实完成后本地索引任务才会标记 Completed。
     /// </summary>
     public async Task RebuildIndexAsync(CancellationToken ct)
     {
@@ -171,18 +180,37 @@ public sealed class MeilisearchKnowledgeSearchService(
         }).ToList();
 
         using var client = CreateClient();
-        await SendAndEnsureAsync(client, HttpMethod.Delete, $"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}/documents", null, ct, allowNotFound: true);
-        await SendAndEnsureAsync(client, HttpMethod.Put, $"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}/settings/searchable-attributes", new[] { "title", "markdown" }, ct);
-        await SendAndEnsureAsync(client, HttpMethod.Put, $"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}/settings/filterable-attributes", new[] { "knowledgeBaseId" }, ct);
+        await EnsureIndexAsync(client, configureWhenCreated: false, ct);
+
+        var clearTask = await SendTaskAsync(client, HttpMethod.Delete, $"{IndexUrl}/documents", null, ct, allowNotFound: true);
+        if (clearTask.HasValue) await WaitTaskAsync(client, clearTask.Value, ct);
+
+        var searchableTask = await SendTaskAsync(
+            client,
+            HttpMethod.Put,
+            $"{IndexUrl}/settings/searchable-attributes",
+            new[] { "title", "markdown" },
+            ct);
+        await WaitTaskAsync(client, searchableTask, ct);
+
+        var filterableTask = await SendTaskAsync(
+            client,
+            HttpMethod.Put,
+            $"{IndexUrl}/settings/filterable-attributes",
+            new[] { "knowledgeBaseId" },
+            ct);
+        await WaitTaskAsync(client, filterableTask, ct);
 
         const int batchSize = 500;
         for (var i = 0; i < rows.Count; i += batchSize)
         {
             var batch = rows.Skip(i).Take(batchSize).ToArray();
-            await SendAndEnsureAsync(client, HttpMethod.Put,
-                $"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}/documents?primaryKey=id", batch, ct);
+            var batchTask = await SendTaskAsync(client, HttpMethod.Put, $"{IndexUrl}/documents?primaryKey=id", batch, ct);
+            await WaitTaskAsync(client, batchTask, ct);
         }
     }
+
+    private string IndexUrl => $"{_endpoint}/indexes/{Uri.EscapeDataString(_indexName)}";
 
     private HttpClient CreateClient()
     {
@@ -192,13 +220,91 @@ public sealed class MeilisearchKnowledgeSearchService(
         return client;
     }
 
-    private static async Task SendAndEnsureAsync(HttpClient client, HttpMethod method, string url, object? body, CancellationToken ct, bool allowNotFound = false)
+    /// <summary>
+    /// 确认索引存在。首次创建时同步配置检索字段和权限过滤字段，避免增量写入先创建出不可过滤的索引。
+    /// </summary>
+    private async Task EnsureIndexAsync(HttpClient client, bool configureWhenCreated, CancellationToken ct)
+    {
+        using var response = await client.GetAsync(IndexUrl, ct);
+        if (response.IsSuccessStatusCode) return;
+        if (response.StatusCode != HttpStatusCode.NotFound)
+        {
+            response.EnsureSuccessStatusCode();
+            return;
+        }
+
+        var createTask = await SendTaskAsync(client, HttpMethod.Post, $"{_endpoint}/indexes", new { uid = _indexName, primaryKey = "id" }, ct);
+        await WaitTaskAsync(client, createTask, ct);
+
+        if (!configureWhenCreated) return;
+
+        var searchableTask = await SendTaskAsync(
+            client,
+            HttpMethod.Put,
+            $"{IndexUrl}/settings/searchable-attributes",
+            new[] { "title", "markdown" },
+            ct);
+        await WaitTaskAsync(client, searchableTask, ct);
+
+        var filterableTask = await SendTaskAsync(
+            client,
+            HttpMethod.Put,
+            $"{IndexUrl}/settings/filterable-attributes",
+            new[] { "knowledgeBaseId" },
+            ct);
+        await WaitTaskAsync(client, filterableTask, ct);
+    }
+
+    /// <summary>发送会产生 Meilisearch taskUid 的写操作。</summary>
+    private static async Task<long> SendTaskAsync(
+        HttpClient client,
+        HttpMethod method,
+        string url,
+        object? body,
+        CancellationToken ct,
+        bool allowNotFound = false)
     {
         using var request = new HttpRequestMessage(method, url);
         if (body is not null) request.Content = JsonContent.Create(body);
         using var response = await client.SendAsync(request, ct);
-        if (allowNotFound && response.StatusCode == System.Net.HttpStatusCode.NotFound) return;
+        if (allowNotFound && response.StatusCode == HttpStatusCode.NotFound) return -1;
         response.EnsureSuccessStatusCode();
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(ct));
+        if (!json.RootElement.TryGetProperty("taskUid", out var uidNode) || !uidNode.TryGetInt64(out var taskUid))
+            throw new InvalidDataException("Meilisearch 响应中缺少 taskUid，无法确认索引操作是否真正完成。");
+        return taskUid;
+    }
+
+    /// <summary>等待指定 Meilisearch 内部任务完成，失败或取消时直接抛出异常。</summary>
+    private async Task WaitTaskAsync(HttpClient client, long taskUid, CancellationToken ct)
+    {
+        if (taskUid < 0) return;
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(5);
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            using var response = await client.GetAsync($"{_endpoint}/tasks/{taskUid}", ct);
+            response.EnsureSuccessStatusCode();
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(ct));
+            var root = json.RootElement;
+            var status = root.TryGetProperty("status", out var statusNode) ? statusNode.GetString() : null;
+
+            if (string.Equals(status, "succeeded", StringComparison.OrdinalIgnoreCase)) return;
+            if (string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "canceled", StringComparison.OrdinalIgnoreCase))
+            {
+                var message = root.TryGetProperty("error", out var errorNode)
+                              && errorNode.TryGetProperty("message", out var messageNode)
+                    ? messageNode.GetString()
+                    : null;
+                throw new InvalidOperationException($"Meilisearch 任务 {taskUid} 执行失败：{message ?? status ?? "未知错误"}");
+            }
+
+            await Task.Delay(200, ct);
+        }
+
+        throw new TimeoutException($"等待 Meilisearch 任务 {taskUid} 完成超时。");
     }
 
     private static string BuildSnippet(string text, string keyword)
